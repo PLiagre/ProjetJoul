@@ -9,9 +9,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: '#1E40AF', // Deep blue
-        secondary: '#10B981', // Emerald
-        accent: '#F59E0B', // Amber
+        // Couleurs personnalisées pour le thème JOUL
+        primary: {
+          DEFAULT: '#10B981', // Vert émeraude pour l'énergie verte
+          dark: '#059669',
+          light: '#34D399',
+        },
+        secondary: {
+          DEFAULT: '#6366F1', // Indigo pour les éléments secondaires
+          dark: '#4F46E5',
+          light: '#818CF8',
+        },
       },
     },
   },
@@ -19,11 +27,15 @@ const config: Config = {
   daisyui: {
     themes: [
       {
-        light: {
-          ...require('daisyui/src/theming/themes')['light'],
-          primary: '#1E40AF',
-          secondary: '#10B981',
+        dark: {
+          ...require('daisyui/src/theming/themes')['dark'],
+          primary: '#10B981',
+          secondary: '#6366F1',
           accent: '#F59E0B',
+          neutral: '#1F2937',
+          'base-100': '#111827',
+          'base-200': '#1F2937',
+          'base-300': '#374151',
         },
       },
     ],

@@ -1,51 +1,53 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./JoulToken.sol";
 import "./EnergyNFT.sol";
 
 /**
  * @title EnergyExchange
- * @dev Main contract for the JOUL Energy Exchange platform
+ * @dev Contrat principal pour l'échange d'énergie
+ * - Gestion des offres d'énergie
+ * - Distribution des frais
+ * - Intégration avec ENEDIS
+ * - Système de lock 24h
  */
-contract EnergyExchange is AccessControl, ReentrancyGuard {
+contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     bytes32 public constant ENEDIS_ROLE = keccak256("ENEDIS_ROLE");
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    // Fee distribution (in basis points, 10000 = 100%)
-    uint16 public constant PRODUCER_SHARE = 7500;    // 75%
-    uint16 public constant ENEDIS_SHARE = 2000;     // 20%
-    uint16 public constant PLATFORM_FEE = 300;      // 3%
-    uint16 public constant POOL_SHARE = 200;        // 2%
+    JoulToken public immutable joulToken;
+    EnergyNFT public immutable energyNFT;
 
-    // Lock period for ENEDIS validation
-    uint256 public constant LOCK_PERIOD = 24 hours;
-
-    JoulToken public joulToken;
-    EnergyNFT public energyNFT;
-    address public enedisAddress;
-    address public poolAddress;
-    address public platformAddress;
+    // Paramètres de distribution des frais (base 1000)
+    uint256 public constant PRODUCER_SHARE = 750;  // 75%
+    uint256 public constant ENEDIS_SHARE = 200;   // 20%
+    uint256 public constant PLATFORM_SHARE = 30;   // 3%
+    uint256 public constant POOL_SHARE = 20;      // 2%
 
     struct EnergyOffer {
         address producer;
-        uint256 quantity;         // in Wh
-        uint256 pricePerUnit;     // in wei per Wh
+        uint256 quantity;     // Wh
+        uint256 pricePerUnit; // MATIC par Wh
         string energyType;
         uint256 timestamp;
-        bool active;
-        bool validated;
+        bool isActive;
         address buyer;
-        uint256 lockExpiry;
+        bool isValidated;
+        bool isCompleted;
     }
 
-    // Mapping from offer ID to offer details
     mapping(uint256 => EnergyOffer) public offers;
+    mapping(uint256 => uint256) public offerLocks; // offerId => timestamp
     uint256 private _nextOfferId;
 
-    // Events
+    address public immutable enedisAddress;
+    address public immutable poolAddress;
+    uint256 public constant LOCK_PERIOD = 24 hours;
+
     event OfferCreated(
         uint256 indexed offerId,
         address indexed producer,
@@ -62,49 +64,46 @@ contract EnergyExchange is AccessControl, ReentrancyGuard {
 
     event OfferValidated(
         uint256 indexed offerId,
-        address indexed validator
+        bool success
     );
 
-    event OfferReverted(
+    event FeesDistributed(
         uint256 indexed offerId,
-        string reason
+        uint256 producerAmount,
+        uint256 enedisAmount,
+        uint256 platformAmount,
+        uint256 poolAmount
     );
 
     constructor(
         address _joulToken,
         address _energyNFT,
         address _enedisAddress,
-        address _poolAddress,
-        address _platformAddress
+        address _poolAddress
     ) {
-        require(_joulToken != address(0), "Invalid JOUL token address");
-        require(_energyNFT != address(0), "Invalid NFT address");
+        require(_joulToken != address(0), "Invalid JoulToken address");
+        require(_energyNFT != address(0), "Invalid EnergyNFT address");
         require(_enedisAddress != address(0), "Invalid ENEDIS address");
         require(_poolAddress != address(0), "Invalid pool address");
-        require(_platformAddress != address(0), "Invalid platform address");
 
         joulToken = JoulToken(_joulToken);
         energyNFT = EnergyNFT(_energyNFT);
         enedisAddress = _enedisAddress;
         poolAddress = _poolAddress;
-        platformAddress = _platformAddress;
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ENEDIS_ROLE, _enedisAddress);
-        _grantRole(OPERATOR_ROLE, msg.sender);
+        _grantRole(PAUSER_ROLE, msg.sender);
     }
 
     /**
-     * @dev Create a new energy offer
-     * @param quantity Amount of energy in Wh
-     * @param pricePerUnit Price per Wh in wei
-     * @param energyType Type of energy being offered
+     * @dev Crée une nouvelle offre d'énergie
      */
     function createOffer(
         uint256 quantity,
         uint256 pricePerUnit,
         string memory energyType
-    ) external returns (uint256) {
+    ) external whenNotPaused returns (uint256) {
         require(quantity > 0, "Quantity must be positive");
         require(pricePerUnit > 0, "Price must be positive");
 
@@ -116,10 +115,10 @@ contract EnergyExchange is AccessControl, ReentrancyGuard {
             pricePerUnit: pricePerUnit,
             energyType: energyType,
             timestamp: block.timestamp,
-            active: true,
-            validated: false,
+            isActive: true,
             buyer: address(0),
-            lockExpiry: 0
+            isValidated: false,
+            isCompleted: false
         });
 
         emit OfferCreated(
@@ -134,162 +133,170 @@ contract EnergyExchange is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @dev Purchase an energy offer
-     * @param offerId ID of the offer to purchase
+     * @dev Achète une offre d'énergie
      */
-    function purchaseOffer(uint256 offerId) external payable nonReentrant {
+    function purchaseOffer(uint256 offerId) 
+        external 
+        payable 
+        whenNotPaused 
+        nonReentrant 
+    {
         EnergyOffer storage offer = offers[offerId];
-        require(offer.active, "Offer is not active");
-        require(!offer.validated, "Offer already validated");
+        require(offer.isActive, "Offer is not active");
+        require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer == address(0), "Offer already purchased");
-        
+
         uint256 totalPrice = offer.quantity * offer.pricePerUnit;
         require(msg.value == totalPrice, "Incorrect payment amount");
 
         offer.buyer = msg.sender;
-        offer.lockExpiry = block.timestamp + LOCK_PERIOD;
+        offer.isActive = false;
+        offerLocks[offerId] = block.timestamp;
 
         emit OfferPurchased(offerId, msg.sender, totalPrice);
     }
 
     /**
-     * @dev Validate an offer (ENEDIS only)
-     * @param offerId ID of the offer to validate
-     * @param tokenURI IPFS URI for the NFT metadata
+     * @dev Validation ENEDIS et distribution des fonds
      */
-    function validateOffer(uint256 offerId, string memory tokenURI) 
+    function validateAndDistribute(uint256 offerId, bool isValid) 
         external 
         onlyRole(ENEDIS_ROLE) 
+        whenNotPaused 
+        nonReentrant
     {
         EnergyOffer storage offer = offers[offerId];
+        require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer != address(0), "Offer not purchased");
-        require(block.timestamp <= offer.lockExpiry, "Lock period expired");
-        require(!offer.validated, "Already validated");
-
-        // Calculate fee distribution
-        uint256 totalAmount = offer.quantity * offer.pricePerUnit;
-        uint256 producerAmount = (totalAmount * PRODUCER_SHARE) / 10000;
-        uint256 enedisAmount = (totalAmount * ENEDIS_SHARE) / 10000;
-        uint256 platformAmount = (totalAmount * PLATFORM_FEE) / 10000;
-        uint256 poolAmount = (totalAmount * POOL_SHARE) / 10000;
-
-        // Distribute payments
-        (bool producerSuccess,) = offer.producer.call{value: producerAmount}("");
-        (bool enedisSuccess,) = enedisAddress.call{value: enedisAmount}("");
-        (bool platformSuccess,) = platformAddress.call{value: platformAmount}("");
-        (bool poolSuccess,) = poolAddress.call{value: poolAmount}("");
-
-        require(producerSuccess && enedisSuccess && platformSuccess && poolSuccess, 
-                "Payment distribution failed");
-
-        // Mint NFT to buyer
-        energyNFT.mintEnergyNFT(
-            offer.buyer,
-            offer.quantity,
-            offer.energyType,
-            tokenURI
+        require(
+            block.timestamp >= offerLocks[offerId] + LOCK_PERIOD,
+            "Lock period not ended"
         );
 
-        // Mint JOUL rewards
+        offer.isValidated = isValid;
+        offer.isCompleted = true;
+
+        emit OfferValidated(offerId, isValid);
+
+        if (isValid) {
+            _distributeFeesAndRewards(offerId);
+        } else {
+            // Remboursement de l'acheteur en cas d'échec
+            uint256 totalPrice = offer.quantity * offer.pricePerUnit;
+            (bool success,) = payable(offer.buyer).call{value: totalPrice}("");
+            require(success, "Refund failed");
+        }
+    }
+
+    /**
+     * @dev Distribution interne des frais et récompenses
+     */
+    function _distributeFeesAndRewards(uint256 offerId) private {
+        EnergyOffer storage offer = offers[offerId];
+        uint256 totalAmount = offer.quantity * offer.pricePerUnit;
+        
+        // Calcul des parts
+        uint256 producerAmount = (totalAmount * PRODUCER_SHARE) / 1000;
+        uint256 enedisAmount = (totalAmount * ENEDIS_SHARE) / 1000;
+        uint256 platformAmount = (totalAmount * PLATFORM_SHARE) / 1000;
+        uint256 poolAmount = (totalAmount * POOL_SHARE) / 1000;
+
+        // Transferts MATIC
+        (bool producerSuccess,) = payable(offer.producer).call{value: producerAmount}("");
+        require(producerSuccess, "Producer transfer failed");
+
+        (bool enedisSuccess,) = payable(enedisAddress).call{value: enedisAmount}("");
+        require(enedisSuccess, "ENEDIS transfer failed");
+
+        (bool poolSuccess,) = payable(poolAddress).call{value: poolAmount}("");
+        require(poolSuccess, "Pool transfer failed");
+
+        // Mint des récompenses JOUL
         joulToken.mintProductionReward(offer.producer, offer.quantity);
         joulToken.mintSaleReward(offer.producer, totalAmount);
         joulToken.mintPurchaseReward(offer.buyer, totalAmount);
 
-        offer.validated = true;
-        offer.active = false;
-
-        emit OfferValidated(offerId, msg.sender);
-    }
-
-    /**
-     * @dev Revert an offer if validation fails or lock period expires
-     * @param offerId ID of the offer to revert
-     */
-    function revertOffer(uint256 offerId) external {
-        EnergyOffer storage offer = offers[offerId];
-        require(offer.buyer != address(0), "Offer not purchased");
-        require(!offer.validated, "Offer already validated");
-        require(
-            block.timestamp > offer.lockExpiry || 
-            hasRole(ENEDIS_ROLE, msg.sender),
-            "Cannot revert: lock period active"
-        );
-
-        uint256 refundAmount = offer.quantity * offer.pricePerUnit;
-        (bool success,) = offer.buyer.call{value: refundAmount}("");
-        require(success, "Refund failed");
-
-        offer.buyer = address(0);
-        offer.lockExpiry = 0;
-        offer.active = true;
-
-        emit OfferReverted(offerId, "Validation failed or lock period expired");
-    }
-
-    /**
-     * @dev Get active offer details
-     * @param offerId ID of the offer
-     */
-    function getOffer(uint256 offerId) external view returns (
-        address producer,
-        uint256 quantity,
-        uint256 pricePerUnit,
-        string memory energyType,
-        uint256 timestamp,
-        bool active,
-        bool validated,
-        address buyer,
-        uint256 lockExpiry
-    ) {
-        EnergyOffer memory offer = offers[offerId];
-        return (
-            offer.producer,
-            offer.quantity,
-            offer.pricePerUnit,
-            offer.energyType,
-            offer.timestamp,
-            offer.active,
-            offer.validated,
+        // Mint du NFT pour l'acheteur
+        string memory uri = _generateTokenURI(offerId);
+        energyNFT.mintCertificate(
             offer.buyer,
-            offer.lockExpiry
+            offer.quantity,
+            offer.energyType,
+            uri
+        );
+
+        emit FeesDistributed(
+            offerId,
+            producerAmount,
+            enedisAmount,
+            platformAmount,
+            poolAmount
         );
     }
 
     /**
-     * @dev Update ENEDIS address
-     * @param newEnedisAddress New address for ENEDIS
+     * @dev Génère l'URI des métadonnées pour le NFT
+     * Note: Dans une version production, ceci devrait être lié à IPFS
      */
-    function updateEnedisAddress(address newEnedisAddress) 
-        external 
-        onlyRole(DEFAULT_ADMIN_ROLE) 
+    function _generateTokenURI(uint256 offerId) 
+        private 
+        pure 
+        returns (string memory) 
     {
-        require(newEnedisAddress != address(0), "Invalid address");
-        _revokeRole(ENEDIS_ROLE, enedisAddress);
-        _grantRole(ENEDIS_ROLE, newEnedisAddress);
-        enedisAddress = newEnedisAddress;
+        // Placeholder - à implémenter avec IPFS
+        return string(abi.encodePacked("ipfs://", uint2str(offerId)));
     }
 
     /**
-     * @dev Update pool address
-     * @param newPoolAddress New address for the pool
+     * @dev Convertit un uint en string
      */
-    function updatePoolAddress(address newPoolAddress) 
-        external 
-        onlyRole(DEFAULT_ADMIN_ROLE) 
+    function uint2str(uint256 _i) 
+        private 
+        pure 
+        returns (string memory str) 
     {
-        require(newPoolAddress != address(0), "Invalid address");
-        poolAddress = newPoolAddress;
+        if (_i == 0) {
+            return "0";
+        }
+        uint256 j = _i;
+        uint256 length;
+        while (j != 0) {
+            length++;
+            j /= 10;
+        }
+        bytes memory bstr = new bytes(length);
+        uint256 k = length;
+        j = _i;
+        while (j != 0) {
+            bstr[--k] = bytes1(uint8(48 + j % 10));
+            j /= 10;
+        }
+        str = string(bstr);
     }
 
     /**
-     * @dev Update platform address
-     * @param newPlatformAddress New address for the platform
+     * @dev Pause le contrat
      */
-    function updatePlatformAddress(address newPlatformAddress) 
-        external 
-        onlyRole(DEFAULT_ADMIN_ROLE) 
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @dev Reprend les opérations
+     */
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    /**
+     * @dev Override requis par Solidity
+     */
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AccessControl)
+        returns (bool)
     {
-        require(newPlatformAddress != address(0), "Invalid address");
-        platformAddress = newPlatformAddress;
+        return super.supportsInterface(interfaceId);
     }
 }

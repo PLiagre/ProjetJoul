@@ -1,60 +1,70 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title EnergyNFT
- * @dev Implementation of the Energy NFT certificate with metadata
+ * @dev NFT représentant les certificats d'énergie
+ * - Stockage des métadonnées sur IPFS
+ * - Mintable uniquement par les rôles autorisés
+ * - Traçabilité de la production d'énergie
  */
-contract EnergyNFT is ERC721, ERC721URIStorage, AccessControl {
-    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+contract EnergyNFT is ERC721, AccessControl, Pausable {
     uint256 private _nextTokenId;
 
-    struct EnergyMetadata {
-        uint256 quantity;     // Amount of energy in Wh
-        string energyType;    // Type of energy (solar, wind, etc.)
-        uint256 timestamp;    // Production timestamp
-        address producer;     // Producer address
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
+    struct EnergyData {
+        uint256 quantity;     // Quantité d'énergie en Wh
+        string energyType;    // Type d'énergie (solaire, éolien, etc.)
+        uint256 timestamp;    // Date de production
+        address producer;     // Adresse du producteur
     }
 
-    // Mapping from token ID to energy metadata
-    mapping(uint256 => EnergyMetadata) private _energyMetadata;
+    // Mapping pour stocker les URIs des tokens
+    mapping(uint256 => string) private _tokenURIs;
+    // Mapping pour stocker les données d'énergie
+    mapping(uint256 => EnergyData) public energyData;
 
     event EnergyNFTMinted(
         uint256 indexed tokenId,
         address indexed producer,
         uint256 quantity,
         string energyType,
-        uint256 timestamp
+        string uri
     );
 
     constructor() ERC721("JOUL Energy Certificate", "JEC") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
+        _grantRole(PAUSER_ROLE, msg.sender);
     }
 
     /**
-     * @dev Mint a new Energy NFT
-     * @param to Address receiving the NFT
-     * @param quantity Amount of energy in Wh
-     * @param energyType Type of energy produced
-     * @param tokenURI IPFS URI containing additional metadata
+     * @dev Crée un nouveau certificat d'énergie
+     * @param to Adresse du bénéficiaire
+     * @param quantity Quantité d'énergie en Wh
+     * @param energyType Type d'énergie
+     * @param uri URI IPFS des métadonnées
+     * @return uint256 ID du nouveau token
      */
-    function mintEnergyNFT(
+    function mintCertificate(
         address to,
         uint256 quantity,
         string memory energyType,
-        string memory tokenURI
-    ) external onlyRole(MINTER_ROLE) returns (uint256) {
+        string memory uri
+    ) external onlyRole(MINTER_ROLE) whenNotPaused returns (uint256) {
         uint256 tokenId = _nextTokenId++;
         
-        _mint(to, tokenId);
-        _setTokenURI(tokenId, tokenURI);
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, uri);
 
-        _energyMetadata[tokenId] = EnergyMetadata({
+        energyData[tokenId] = EnergyData({
             quantity: quantity,
             energyType: energyType,
             timestamp: block.timestamp,
@@ -66,65 +76,81 @@ contract EnergyNFT is ERC721, ERC721URIStorage, AccessControl {
             to,
             quantity,
             energyType,
-            block.timestamp
+            uri
         );
 
         return tokenId;
     }
 
     /**
-     * @dev Get energy metadata for a specific token
-     * @param tokenId The ID of the token
+     * @dev Récupère les données d'énergie d'un certificat
+     * @param tokenId ID du token
      */
-    function getEnergyMetadata(uint256 tokenId) 
+    function getCertificateData(uint256 tokenId) 
         external 
         view 
-        returns (
-            uint256 quantity,
-            string memory energyType,
-            uint256 timestamp,
-            address producer
-        ) 
+        returns (EnergyData memory) 
     {
-        require(ownerOf(tokenId) != address(0), "EnergyNFT: Token does not exist");
-        EnergyMetadata memory metadata = _energyMetadata[tokenId];
-        return (
-            metadata.quantity,
-            metadata.energyType,
-            metadata.timestamp,
-            metadata.producer
-        );
+        require(_ownerOf(tokenId) != address(0), "Certificate does not exist");
+        return energyData[tokenId];
     }
 
-    // Required overrides
-    function _update(
-        address to,
-        uint256 tokenId,
-        address auth
-    ) internal virtual override(ERC721) returns (address) {
+    /**
+     * @dev Définit l'URI d'un token
+     */
+    function _setTokenURI(uint256 tokenId, string memory uri) internal {
+        require(_ownerOf(tokenId) != address(0), "URI set for nonexistent token");
+        _tokenURIs[tokenId] = uri;
+    }
+
+    /**
+     * @dev Récupère l'URI d'un token
+     */
+    function tokenURI(uint256 tokenId) 
+        public 
+        view 
+        virtual 
+        override 
+        returns (string memory) 
+    {
+        require(_ownerOf(tokenId) != address(0), "URI query for nonexistent token");
+        return _tokenURIs[tokenId];
+    }
+
+    /**
+     * @dev Pause toutes les opérations de minting et transfert
+     */
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @dev Reprend les opérations
+     */
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    /**
+     * @dev Hook avant le transfert
+     */
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        virtual
+        override
+        whenNotPaused
+        returns (address)
+    {
         return super._update(to, tokenId, auth);
     }
 
-    function _increaseBalance(
-        address account,
-        uint128 value
-    ) internal virtual override(ERC721) {
-        super._increaseBalance(account, value);
-    }
-
-    function tokenURI(uint256 tokenId)
-        public
-        view
-        override(ERC721, ERC721URIStorage)
-        returns (string memory)
-    {
-        return super.tokenURI(tokenId);
-    }
-
+    /**
+     * @dev Override requis par Solidity
+     */
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC721, ERC721URIStorage, AccessControl)
+        override(ERC721, AccessControl)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
