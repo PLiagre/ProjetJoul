@@ -2,9 +2,7 @@
 pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title EnergyNFT
@@ -13,11 +11,10 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * - Mintable uniquement par les rôles autorisés
  * - Traçabilité de la production d'énergie
  */
-contract EnergyNFT is ERC721, AccessControl, Pausable {
+contract EnergyNFT is ERC721, AccessControl {
     uint256 private _nextTokenId;
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     struct EnergyData {
         uint256 quantity;     // Quantité d'énergie en Wh
@@ -42,7 +39,6 @@ contract EnergyNFT is ERC721, AccessControl, Pausable {
     constructor() ERC721("JOUL Energy Certificate", "JEC") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
-        _grantRole(PAUSER_ROLE, msg.sender);
     }
 
     /**
@@ -58,7 +54,12 @@ contract EnergyNFT is ERC721, AccessControl, Pausable {
         uint256 quantity,
         string memory energyType,
         string memory uri
-    ) external onlyRole(MINTER_ROLE) whenNotPaused returns (uint256) {
+    ) external onlyRole(MINTER_ROLE) returns (uint256) {
+        require(to != address(0), "Invalid recipient address");
+        require(bytes(energyType).length > 0, "Energy type cannot be empty");
+        require(quantity > 0, "Quantity must be greater than 0");
+        require(bytes(uri).length > 0, "URI cannot be empty");
+
         uint256 tokenId = _nextTokenId++;
         
         _safeMint(to, tokenId);
@@ -118,30 +119,17 @@ contract EnergyNFT is ERC721, AccessControl, Pausable {
     }
 
     /**
-     * @dev Pause toutes les opérations de minting et transfert
+     * @dev Fonction pour brûler un token
      */
-    function pause() external onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    /**
-     * @dev Reprend les opérations
-     */
-    function unpause() external onlyRole(PAUSER_ROLE) {
-        _unpause();
-    }
-
-    /**
-     * @dev Hook avant le transfert
-     */
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        virtual
-        override
-        whenNotPaused
-        returns (address)
-    {
-        return super._update(to, tokenId, auth);
+    function burn(uint256 tokenId) public {
+        require(_ownerOf(tokenId) == _msgSender() || 
+                isApprovedForAll(_ownerOf(tokenId), _msgSender()) ||
+                getApproved(tokenId) == _msgSender(),
+                "Caller is not owner or approved");
+        
+        _burn(tokenId);
+        delete _tokenURIs[tokenId];
+        delete energyData[tokenId];
     }
 
     /**

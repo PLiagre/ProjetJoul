@@ -1,39 +1,20 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
-import { Chain } from 'wagmi/chains'
+import { sepolia } from 'wagmi/chains'
 import { http } from 'wagmi'
-
-// Configuration de Polygon Amoy Testnet
-export const polygonAmoy = {
-  id: 80_001,
-  name: 'Polygon Amoy',
-  nativeCurrency: {
-    decimals: 18,
-    name: 'MATIC',
-    symbol: 'MATIC',
-  },
-  rpcUrls: {
-    public: { http: ['https://rpc-amoy.polygon.technology'] },
-    default: { http: ['https://rpc-amoy.polygon.technology'] },
-  },
-  blockExplorers: {
-    default: { name: 'OKLink', url: 'https://www.oklink.com/amoy' },
-  },
-  testnet: true,
-} as const satisfies Chain
 
 export const wagmiConfig = getDefaultConfig({
   appName: 'JOUL Energy Exchange',
-  projectId: 'YOUR_WALLET_CONNECT_PROJECT_ID', // À remplacer par votre Project ID WalletConnect
-  chains: [polygonAmoy],
+  projectId: 'c6c9e3de6f50a53b26b9b9c4859d6025', // WalletConnect Project ID
+  chains: [sepolia],
   transports: {
-    [polygonAmoy.id]: http()
+    [sepolia.id]: http()
   },
 })
 
-// Adresses des contrats déployés sur Polygon Amoy
+// Adresses des contrats déployés sur Sepolia
 export const CONTRACT_ADDRESSES = {
-  JOUL_TOKEN: '0x...',      // À remplacer après déploiement
-  ENERGY_NFT: '0x...',      // À remplacer après déploiement
-  ENERGY_EXCHANGE: '0x...', // À remplacer après déploiement
-  JOUL_GOVERNANCE: '0x...'  // À remplacer après déploiement
+  JOUL_TOKEN: '0x4d2dbdD0727edF6346c8207927B362cB334dEf6a',
+  ENERGY_NFT: '0x326f559aA170D323dBb17b6308638043A07b60BA',
+  ENERGY_EXCHANGE: '0x3e5A0693d4dE500EcA89a97F565626969243D4E4',
+  JOUL_GOVERNANCE: '0x9249A6b1e5909a4136b885bf0e65636e94C69857'
 } as const

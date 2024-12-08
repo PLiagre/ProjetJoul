@@ -4,16 +4,25 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from '../lib/wagmi-config'
+import { EnergyExchangeProvider } from '../contexts/energy-exchange-provider'
+import { UserManagementProvider } from '../contexts/user-management-provider'
+import { useContractAddresses } from '../hooks/useContractAddresses'
 import '@rainbow-me/rainbowkit/styles.css'
 
 const queryClient = new QueryClient()
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  const { userManagement: userManagementAddress } = useContractAddresses()
+
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={darkTheme()}>
-          {children}
+          <EnergyExchangeProvider>
+            <UserManagementProvider contractAddress={userManagementAddress}>
+              {children}
+            </UserManagementProvider>
+          </EnergyExchangeProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

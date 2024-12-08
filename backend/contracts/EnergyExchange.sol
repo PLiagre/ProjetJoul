@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./JoulToken.sol";
 import "./EnergyNFT.sol";
+import "./UserManagement.sol";
 
 /**
  * @title EnergyExchange
@@ -21,6 +22,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
 
     JoulToken public immutable joulToken;
     EnergyNFT public immutable energyNFT;
+    UserManagement public immutable userManagement;
 
     // Paramètres de distribution des frais (base 1000)
     uint256 public constant PRODUCER_SHARE = 750;  // 75%
@@ -78,16 +80,19 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     constructor(
         address _joulToken,
         address _energyNFT,
+        address _userManagement,
         address _enedisAddress,
         address _poolAddress
     ) {
         require(_joulToken != address(0), "Invalid JoulToken address");
         require(_energyNFT != address(0), "Invalid EnergyNFT address");
+        require(_userManagement != address(0), "Invalid UserManagement address");
         require(_enedisAddress != address(0), "Invalid ENEDIS address");
         require(_poolAddress != address(0), "Invalid pool address");
 
         joulToken = JoulToken(_joulToken);
         energyNFT = EnergyNFT(_energyNFT);
+        userManagement = UserManagement(_userManagement);
         enedisAddress = _enedisAddress;
         poolAddress = _poolAddress;
 
@@ -106,6 +111,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     ) external whenNotPaused returns (uint256) {
         require(quantity > 0, "Quantity must be positive");
         require(pricePerUnit > 0, "Price must be positive");
+        require(userManagement.isProducer(msg.sender), "Not a producer");
 
         uint256 offerId = _nextOfferId++;
 
@@ -141,6 +147,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         whenNotPaused 
         nonReentrant 
     {
+        require(userManagement.isConsumer(msg.sender), "Not a consumer");
+        
         EnergyOffer storage offer = offers[offerId];
         require(offer.isActive, "Offer is not active");
         require(!offer.isCompleted, "Offer already completed");
