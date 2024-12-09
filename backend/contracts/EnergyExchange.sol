@@ -77,6 +77,15 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         uint256 poolAmount
     );
 
+    event UserAdded(
+        address indexed user,
+        bool isProducer
+    );
+
+    event UserRemoved(
+        address indexed user
+    );
+
     constructor(
         address _joulToken,
         address _energyNFT,
@@ -99,6 +108,30 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ENEDIS_ROLE, _enedisAddress);
         _grantRole(PAUSER_ROLE, msg.sender);
+    }
+
+    /**
+     * @dev Ajoute un nouvel utilisateur
+     */
+    function addUser(address user, bool isProducer) 
+        external 
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused 
+    {
+        userManagement.addUser(user, isProducer);
+        emit UserAdded(user, isProducer);
+    }
+
+    /**
+     * @dev Supprime un utilisateur
+     */
+    function removeUser(address user) 
+        external 
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused 
+    {
+        userManagement.removeUser(user);
+        emit UserRemoved(user);
     }
 
     /**

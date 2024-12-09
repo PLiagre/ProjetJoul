@@ -12,10 +12,56 @@ export const abi = [
         "internalType": "address",
         "name": "_energyNFT",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_userManagement",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_enedisAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_poolAddress",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "isProducer",
+        "type": "bool"
+      }
+    ],
+    "name": "addUser",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "removeUser",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
     "inputs": [
@@ -34,17 +80,28 @@ export const abi = [
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "energyAmount",
+        "name": "quantity",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
         "name": "pricePerUnit",
         "type": "uint256"
+      },
+      {
+        "internalType": "string",
+        "name": "energyType",
+        "type": "string"
       }
     ],
-    "name": "createEnergyOffer",
-    "outputs": [],
+    "name": "createOffer",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -56,7 +113,7 @@ export const abi = [
         "type": "uint256"
       }
     ],
-    "name": "energyOffers",
+    "name": "offers",
     "outputs": [
       {
         "internalType": "address",
@@ -65,7 +122,7 @@ export const abi = [
       },
       {
         "internalType": "uint256",
-        "name": "energyAmount",
+        "name": "quantity",
         "type": "uint256"
       },
       {
@@ -74,9 +131,24 @@ export const abi = [
         "type": "uint256"
       },
       {
+        "internalType": "string",
+        "name": "energyType",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
         "internalType": "bool",
         "name": "isActive",
         "type": "bool"
+      },
+      {
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
       },
       {
         "internalType": "bool",
@@ -84,40 +156,9 @@ export const abi = [
         "type": "bool"
       },
       {
-        "internalType": "address",
-        "name": "consumer",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalPrice",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "offerCount",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "owner",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
+        "internalType": "bool",
+        "name": "isCompleted",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -131,7 +172,7 @@ export const abi = [
         "type": "uint256"
       }
     ],
-    "name": "purchaseEnergy",
+    "name": "purchaseOffer",
     "outputs": [],
     "stateMutability": "payable",
     "type": "function"
@@ -139,49 +180,31 @@ export const abi = [
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
         "internalType": "bool",
-        "name": "isProducer",
+        "name": "isValid",
         "type": "bool"
       }
     ],
-    "name": "registerUser",
+    "name": "validateAndDistribute",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "users",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "isRegistered",
-        "type": "bool"
-      },
-      {
-        "internalType": "bool",
-        "name": "isProducer",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
+    "inputs": [],
+    "name": "pause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "offerId",
-        "type": "uint256"
-      }
-    ],
-    "name": "validateEnergyDelivery",
+    "inputs": [],
+    "name": "unpause",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

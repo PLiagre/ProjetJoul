@@ -15,8 +15,8 @@ contract UserManagement is AccessControl, Pausable {
     bytes32 public constant PRODUCER_ROLE = keccak256("PRODUCER_ROLE");
     bytes32 public constant CONSUMER_ROLE = keccak256("CONSUMER_ROLE");
 
-    event UserAdded(address indexed user, bool isProducer);
-    event UserRemoved(address indexed user);
+    event UserAdded(address indexed userAddress, bool isProducer);
+    event UserRemoved(address indexed userAddress);
 
     constructor() {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -25,76 +25,76 @@ contract UserManagement is AccessControl, Pausable {
 
     /**
      * @dev Ajoute un nouvel utilisateur
-     * @param user Adresse de l'utilisateur
-     * @param isProducer true pour producteur, false pour consommateur
+     * @param userAddress Adresse de l'utilisateur
+     * @param _isProducer true pour producteur, false pour consommateur
      */
-    function addUser(address user, bool isProducer) 
+    function addUser(address userAddress, bool _isProducer) 
         external 
         onlyRole(ADMIN_ROLE) 
         whenNotPaused 
     {
-        require(user != address(0), "Invalid address");
+        require(userAddress != address(0), "Invalid address");
         require(
-            !hasRole(PRODUCER_ROLE, user) && !hasRole(CONSUMER_ROLE, user),
+            !hasRole(PRODUCER_ROLE, userAddress) && !hasRole(CONSUMER_ROLE, userAddress),
             "User already registered"
         );
 
-        if (isProducer) {
-            _grantRole(PRODUCER_ROLE, user);
+        if (_isProducer) {
+            _grantRole(PRODUCER_ROLE, userAddress);
         } else {
-            _grantRole(CONSUMER_ROLE, user);
+            _grantRole(CONSUMER_ROLE, userAddress);
         }
 
-        emit UserAdded(user, isProducer);
+        emit UserAdded(userAddress, _isProducer);
     }
 
     /**
      * @dev Supprime un utilisateur
-     * @param user Adresse de l'utilisateur
+     * @param userAddress Adresse de l'utilisateur
      */
-    function removeUser(address user) 
+    function removeUser(address userAddress) 
         external 
         onlyRole(ADMIN_ROLE) 
         whenNotPaused 
     {
-        require(user != address(0), "Invalid address");
+        require(userAddress != address(0), "Invalid address");
         require(
-            hasRole(PRODUCER_ROLE, user) || hasRole(CONSUMER_ROLE, user),
+            hasRole(PRODUCER_ROLE, userAddress) || hasRole(CONSUMER_ROLE, userAddress),
             "User not registered"
         );
 
-        if (hasRole(PRODUCER_ROLE, user)) {
-            _revokeRole(PRODUCER_ROLE, user);
+        if (hasRole(PRODUCER_ROLE, userAddress)) {
+            _revokeRole(PRODUCER_ROLE, userAddress);
         }
-        if (hasRole(CONSUMER_ROLE, user)) {
-            _revokeRole(CONSUMER_ROLE, user);
+        if (hasRole(CONSUMER_ROLE, userAddress)) {
+            _revokeRole(CONSUMER_ROLE, userAddress);
         }
 
-        emit UserRemoved(user);
+        emit UserRemoved(userAddress);
     }
 
     /**
      * @dev Vérifie si un utilisateur est un producteur
-     * @param user Adresse de l'utilisateur
+     * @param userAddress Adresse de l'utilisateur
      */
-    function isProducer(address user) 
+    function isProducer(address userAddress) 
         external 
         view 
         returns (bool) 
     {
-        return hasRole(PRODUCER_ROLE, user);
+        return hasRole(PRODUCER_ROLE, userAddress);
     }
 
     /**
      * @dev Vérifie si un utilisateur est un consommateur
-     * @param user Adresse de l'utilisateur
+     * @param userAddress Adresse de l'utilisateur
      */
-    function isConsumer(address user) 
+    function isConsumer(address userAddress) 
         external 
         view 
         returns (bool) 
     {
-        return hasRole(CONSUMER_ROLE, user);
+        return hasRole(CONSUMER_ROLE, userAddress);
     }
 
     /**

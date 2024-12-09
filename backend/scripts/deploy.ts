@@ -100,9 +100,14 @@ async function main() {
       await adminTx.wait();
       console.log("Granted ADMIN_ROLE to EnergyExchange for UserManagement");
 
+      // Explicitement donner le rôle ADMIN au déployeur pour UserManagement
+      const deployerAdminTx = await userManagement.grantRole(ADMIN_ROLE, deployer.address);
+      await deployerAdminTx.wait();
+      console.log("Granted ADMIN_ROLE to deployer for UserManagement");
+
       // Sauvegarder les adresses des contrats
       const deploymentInfo = {
-        network: "sepolia",
+        network: "localhost",
         contracts: {
           JoulToken: joulTokenAddress,
           EnergyNFT: energyNFTAddress,

@@ -1,7 +1,12 @@
-import { useContractRead, useContractWrite } from 'wagmi'
-import { type Config } from 'wagmi'
+import { useContractAddresses } from '../hooks/useContractAddresses';
+import { keccak256, toBytes } from 'viem';
 
-const abi = [
+export const abi = [
+  {
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
   {
     "inputs": [
       {
@@ -18,6 +23,30 @@ const abi = [
     "name": "addUser",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "hasRole",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -57,37 +86,31 @@ const abi = [
     ],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "removeUser",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
-] as const
+] as const;
 
-type UserManagementContract = {
-  addUser: (params: { args: readonly [string, boolean] }) => void
-  isProducer: boolean | undefined
-  isConsumer: boolean | undefined
-}
+// Generate role hashes using keccak256 to match Solidity's keccak256 hashing
+export const ADMIN_ROLE = keccak256(toBytes('ADMIN_ROLE'));
+export const PRODUCER_ROLE = keccak256(toBytes('PRODUCER_ROLE'));
+export const CONSUMER_ROLE = keccak256(toBytes('CONSUMER_ROLE'));
 
-export function useUserManagement(contractAddress: string): UserManagementContract {
-  const { writeAsync } = useContractWrite({
-    address: contractAddress as `0x${string}`,
-    abi,
-    functionName: 'addUser',
-  } as const)
-
-  const { data: isProducerData } = useContractRead({
-    address: contractAddress as `0x${string}`,
-    abi,
-    functionName: 'isProducer',
-  } as const)
-
-  const { data: isConsumerData } = useContractRead({
-    address: contractAddress as `0x${string}`,
-    abi,
-    functionName: 'isConsumer',
-  } as const)
-
+export function useUserManagementContract() {
+  const { userManagement } = useContractAddresses();
   return {
-    addUser: writeAsync,
-    isProducer: isProducerData as boolean | undefined,
-    isConsumer: isConsumerData as boolean | undefined,
-  }
+    address: userManagement,
+    abi
+  } as const;
 }

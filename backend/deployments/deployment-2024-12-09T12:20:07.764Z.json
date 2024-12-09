@@ -1,0 +1,14 @@
+{
+  "network": "localhost",
+  "contracts": {
+    "JoulToken": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+    "EnergyNFT": "0x9E545E3C0baAB3E08CdfD552C960A1050f373042",
+    "UserManagement": "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9",
+    "EnergyExchange": "0x1613beB3B2C4f22Ee086B2b38C1476A3cE7f78E8",
+    "JoulGovernance": "0x851356ae760d987E095750cCeb3bC6014560891C",
+    "ENEDIS": "0x699e2dB0CA77d29bcADF53c6ecCe6C05Abea6906",
+    "Pool": "0xA106FFeBF2152450b1958F0cA297dcEBFd883fb4"
+  },
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "timestamp": "2024-12-09T12:20:07.764Z"
+}

@@ -5,15 +5,18 @@ import { useAccount, useReadContract, useWriteContract, usePublicClient, useWall
 import { getAddress, abi } from '../contracts/energy-exchange';
 import { parseEther, formatEther, decodeEventLog, type Hash } from 'viem';
 import { useToast } from '../components/ui/use-toast';
+import { useUserManagementContext } from './user-management-provider';
 
 interface EnergyOffer {
   producer: `0x${string}`;
-  energyAmount: bigint;
+  quantity: bigint;
   pricePerUnit: bigint;
+  energyType: string;
+  timestamp: bigint;
   isActive: boolean;
+  buyer: `0x${string}`;
   isValidated: boolean;
-  consumer: `0x${string}`;
-  totalPrice: bigint;
+  isCompleted: boolean;
 }
 
 interface User {
@@ -26,11 +29,11 @@ interface User {
 interface EnergyExchangeContextType {
   currentUser: User | null;
   offers: EnergyOffer[];
-  offerCount: bigint;
-  registerUser: (isProducer: boolean) => Promise<void>;
-  createOffer: (energyAmount: number, pricePerUnit: number) => Promise<void>;
-  purchaseEnergy: (offerId: bigint, totalPrice: bigint) => Promise<void>;
-  validateDelivery: (offerId: bigint) => Promise<void>;
+  addUser: (address: string, isProducer: boolean) => Promise<void>;
+  removeUser: (address: string) => Promise<void>;
+  createOffer: (quantity: number, pricePerUnit: number, energyType: string) => Promise<void>;
+  purchaseOffer: (offerId: bigint, totalPrice: bigint) => Promise<void>;
+  validateDelivery: (offerId: bigint, isValid: boolean) => Promise<void>;
   cancelOffer: (offerId: bigint) => Promise<void>;
 }
 
@@ -85,167 +88,82 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const { data: walletClient } = useWalletClient();
   const [offers, setOffers] = useState<EnergyOffer[]>([]);
   const { toast } = useToast();
+  const [currentUserState, setCurrentUserState] = useState<User | null>(null);
+  const { isAdmin, isProducer, isConsumer } = useUserManagementContext();
+
+  useEffect(() => {
+    async function updateUserStatus() {
+      if (!isConnected || !address) {
+        setCurrentUserState(null);
+        return;
+      }
+
+      try {
+        const [isAdminStatus, isProducerStatus] = await Promise.all([
+          isAdmin(address),
+          isProducer(address)
+        ]);
+
+        setCurrentUserState({
+          address: address as `0x${string}`,
+          isRegistered: true,
+          isProducer: isProducerStatus,
+          isAdmin: isAdminStatus
+        });
+      } catch (error) {
+        console.error('Error checking user status:', error);
+        setCurrentUserState(null);
+      }
+    }
+
+    updateUserStatus();
+  }, [address, isConnected, isAdmin, isProducer]);
 
   useEffect(() => {
     if (!isConnected) {
       setOffers([]);
+      setCurrentUserState(null);
     }
   }, [isConnected]);
 
   const contractAddress = getAddress(chainId);
-
-  const { data: userData, error: userError } = useReadContract({
-    address: contractAddress,
-    abi,
-    functionName: 'users',
-    args: address && isConnected ? [address] : undefined,
-  });
-
-  useEffect(() => {
-    if (!isConnected || !address) return;
-    
-    const interval = setInterval(async () => {
-      try {
-        if (!publicClient) return;
-        await publicClient.readContract({
-          address: contractAddress,
-          abi,
-          functionName: 'users',
-          args: [address],
-        });
-      } catch (error) {
-        console.error('Error refreshing user data:', error);
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [isConnected, address, publicClient, contractAddress]);
-
-  const { data: contractOwner } = useReadContract({
-    address: contractAddress,
-    abi,
-    functionName: 'owner',
-  });
-
-  const { data: offerCount } = useReadContract({
-    address: contractAddress,
-    abi,
-    functionName: 'offerCount',
-  });
-
   const { writeContractAsync } = useWriteContract();
 
-  useEffect(() => {
-    const loadOffers = async () => {
-      if (!contractAddress || !offerCount || !publicClient || !isConnected) return;
-      
-      try {
-        const newOffers: EnergyOffer[] = [];
-        for (let i = 1; i <= Number(offerCount); i++) {
-          const offer = await publicClient.readContract({
-            address: contractAddress,
-            abi,
-            functionName: 'energyOffers',
-            args: [BigInt(i)],
-          }) as unknown as EnergyOffer;
-          newOffers.push(offer);
-        }
-        setOffers(newOffers);
-      } catch (error) {
-        console.error('Failed to load offers:', error);
-        toast({
-          title: "Error Loading Offers",
-          description: parseContractError(error),
-          variant: "destructive",
-        });
-      }
-    };
-
-    loadOffers();
-  }, [contractAddress, offerCount, publicClient, isConnected, toast]);
-
-  const handleRegisterUser = async (isProducer: boolean) => {
+  const handleAddUser = async (userAddress: string, isProducer: boolean) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
-    if (!publicClient) {
-      throw new Error('Network connection error');
-    }
-    if (!address) {
-      throw new Error('Wallet address not found');
-    }
-    
     try {
-      console.log('Registering user:', { address, isProducer, contractAddress });
-      
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
-        functionName: 'registerUser',
-        args: [isProducer],
+        functionName: 'addUser',
+        args: [userAddress as `0x${string}`, isProducer],
       });
-
-      console.log('Registration transaction sent:', hash);
 
       toast({
-        title: "Registration Pending",
-        description: "Please wait while your registration is being processed...",
+        title: "Adding User",
+        description: "Please wait while the user is being added...",
       });
 
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      console.log('Transaction confirmed:', receipt);
-
-      const userRegisteredEvent = receipt.logs.find(log => {
-        try {
-          const event = decodeEventLog({
-            abi,
-            data: log.data,
-            topics: log.topics,
-          });
-          return event.eventName === 'UserRegistered';
-        } catch {
-          return false;
-        }
-      });
-
-      if (!userRegisteredEvent) {
-        throw new Error('Registration transaction completed but no UserRegistered event found');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const result = await publicClient.readContract({
-        address: contractAddress,
-        abi,
-        functionName: 'users',
-        args: [address],
-      }) as readonly [boolean, boolean];
-
-      const [isRegistered, userIsProducer] = result;
-      if (!isRegistered) {
-        throw new Error('Registration verification failed - user not marked as registered');
-      }
+      await publicClient?.waitForTransactionReceipt({ hash });
 
       toast({
-        title: "Registration Successful",
-        description: `Successfully registered as a ${isProducer ? 'producer' : 'consumer'}.`,
+        title: "User Added",
+        description: `Successfully added user as ${isProducer ? 'producer' : 'consumer'}.`,
       });
-
-      console.log('Registration successful:', { isRegistered, isProducer: userIsProducer });
-
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      const errorMessage = parseContractError(error);
+    } catch (error) {
+      console.error('Add user error:', error);
       toast({
-        title: "Registration Failed",
-        description: errorMessage,
+        title: "Failed to Add User",
+        description: parseContractError(error),
         variant: "destructive",
       });
-      throw new Error(errorMessage);
+      throw error;
     }
   };
 
-  const handleCreateOffer = async (energyAmount: number, pricePerUnit: number) => {
+  const handleRemoveUser = async (userAddress: string) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
@@ -253,8 +171,55 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
-        functionName: 'createEnergyOffer',
-        args: [BigInt(energyAmount), parseEther(pricePerUnit.toString())],
+        functionName: 'removeUser',
+        args: [userAddress as `0x${string}`],
+      });
+
+      toast({
+        title: "Removing User",
+        description: "Please wait while the user is being removed...",
+      });
+
+      await publicClient?.waitForTransactionReceipt({ hash });
+
+      toast({
+        title: "User Removed",
+        description: "Successfully removed user.",
+      });
+    } catch (error) {
+      console.error('Remove user error:', error);
+      toast({
+        title: "Failed to Remove User",
+        description: parseContractError(error),
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleCreateOffer = async (quantity: number, pricePerUnit: number, energyType: string) => {
+    if (!writeContractAsync || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+    try {
+      // Convert quantity from kWh to Wh
+      const quantityWh = BigInt(Math.floor(quantity * 1000));
+      
+      // Convert price from MATIC/kWh to MATIC/Wh first, then to wei
+      const pricePerWhInMatic = pricePerUnit / 1000;
+      const pricePerWhInWei = parseEther(pricePerWhInMatic.toString());
+
+      console.log('Creating offer with params:', {
+        quantity: quantityWh.toString(),
+        pricePerUnit: pricePerWhInWei.toString(),
+        energyType
+      });
+
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'createOffer',
+        args: [quantityWh, pricePerWhInWei, energyType],
       });
 
       toast({
@@ -279,7 +244,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handlePurchaseEnergy = async (offerId: bigint, totalPrice: bigint) => {
+  const handlePurchaseOffer = async (offerId: bigint, totalPrice: bigint) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
@@ -287,7 +252,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
-        functionName: 'purchaseEnergy',
+        functionName: 'purchaseOffer',
         args: [offerId],
         value: totalPrice,
       });
@@ -314,7 +279,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleValidateDelivery = async (offerId: bigint) => {
+  const handleValidateDelivery = async (offerId: bigint, isValid: boolean) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
@@ -322,8 +287,8 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
-        functionName: 'validateEnergyDelivery',
-        args: [offerId],
+        functionName: 'validateAndDistribute',
+        args: [offerId, isValid],
       });
 
       toast({
@@ -382,20 +347,13 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const currentUser: User | null = isConnected && userData && address ? {
-    address,
-    isRegistered: (userData as readonly [boolean, boolean])[0],
-    isProducer: (userData as readonly [boolean, boolean])[1],
-    isAdmin: contractOwner ? address.toLowerCase() === (contractOwner as `0x${string}`).toLowerCase() : false,
-  } : null;
-
   const value = {
-    currentUser,
+    currentUser: currentUserState,
     offers,
-    offerCount: offerCount || BigInt(0),
-    registerUser: handleRegisterUser,
+    addUser: handleAddUser,
+    removeUser: handleRemoveUser,
     createOffer: handleCreateOffer,
-    purchaseEnergy: handlePurchaseEnergy,
+    purchaseOffer: handlePurchaseOffer,
     validateDelivery: handleValidateDelivery,
     cancelOffer: handleCancelOffer,
   };
