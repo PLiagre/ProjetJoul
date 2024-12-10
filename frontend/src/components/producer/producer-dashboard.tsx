@@ -7,7 +7,7 @@ import { formatEther } from "viem";
 
 export function ProducerDashboard() {
   const { address } = useAccount();
-  const { createOffer, offers } = useEnergyExchange();
+  const { createOffer, offers, currentUser } = useEnergyExchange();
   const [quantity, setQuantity] = useState("");
   const [pricePerUnit, setPricePerUnit] = useState("");
   const [energyType, setEnergyType] = useState("solar");
@@ -20,6 +20,24 @@ export function ProducerDashboard() {
     address: address,
     token: process.env.NEXT_PUBLIC_JOUL_TOKEN_ADDRESS as `0x${string}`,
   });
+
+  // Add access control checks
+  if (!address) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold mb-4">Please connect your wallet</h1>
+      </div>
+    );
+  }
+
+  if (!currentUser?.isProducer) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold mb-4">Access Restricted</h1>
+        <p className="text-gray-400">You need producer privileges to access this page.</p>
+      </div>
+    );
+  }
 
   const producerOffers = offers.filter(
     (offer) => offer.producer.toLowerCase() === address?.toLowerCase()

@@ -7,12 +7,13 @@ import { useToast } from "../../components/ui/use-toast";
 
 export function AdminDashboard() {
   const { address, isConnected } = useAccount();
-  const { addUser, currentUser } = useEnergyExchange();
+  const { addUser, removeUser, currentUser } = useEnergyExchange();
   const [newUserAddress, setNewUserAddress] = useState("");
   const [isProducer, setIsProducer] = useState(false);
   const { toast } = useToast();
 
-  if (!isConnected) {
+  // Early return if not connected
+  if (!isConnected || !address) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <h1 className="text-2xl font-bold mb-4">Please connect your wallet</h1>
@@ -20,6 +21,7 @@ export function AdminDashboard() {
     );
   }
 
+  // Early return if not admin
   if (!currentUser?.isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
@@ -31,15 +33,35 @@ export function AdminDashboard() {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isConnected || !newUserAddress) return;
+    if (!newUserAddress) return;
 
     try {
-      await addUser(newUserAddress, isProducer);
+      // Validate Ethereum address format
+      if (!/^0x[a-fA-F0-9]{40}$/.test(newUserAddress)) {
+        throw new Error("Invalid Ethereum address format");
+      }
+
+      // Ensure address is checksummed
+      const checksummedAddress = newUserAddress.toLowerCase();
+
+      // Log the attempt
+      console.log('Attempting to add user:', {
+        address: checksummedAddress,
+        isProducer,
+        callerAddress: address,
+        isAdmin: currentUser.isAdmin
+      });
+
+      // Add the user with their role
+      await addUser(checksummedAddress, isProducer);
+      
+      // Clear form on success
       setNewUserAddress("");
       setIsProducer(false);
+      
       toast({
         title: "Success",
-        description: `User ${newUserAddress} has been added as a ${isProducer ? 'producer' : 'consumer'}.`,
+        description: `User ${checksummedAddress} has been ${isProducer ? 'added as producer' : 'added as consumer'}.`,
       });
     } catch (error: any) {
       console.error("Failed to add user:", error);
@@ -57,7 +79,7 @@ export function AdminDashboard() {
         <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
 
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">Add New User</h2>
+          <h2 className="text-2xl font-bold mb-4 text-white">Add User</h2>
           <form onSubmit={handleAddUser} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-white">
@@ -103,6 +125,8 @@ export function AdminDashboard() {
           <ul className="list-disc list-inside space-y-2 text-white">
             <li>Enter the Ethereum address of the user you want to add</li>
             <li>Check the box if you want to register them as a Producer</li>
+            <li>The address must be a valid Ethereum address (0x followed by 40 hexadecimal characters)</li>
+            <li>You must have admin privileges to manage users</li>
           </ul>
         </div>
       </div>

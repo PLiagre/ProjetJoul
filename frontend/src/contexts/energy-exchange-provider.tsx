@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, ReactNode, useEffect, useState } from 'react';
+import { createContext, useContext, ReactNode, useEffect, useState, useCallback } from 'react';
 import { useAccount, useReadContract, useWriteContract, usePublicClient, useWalletClient, useChainId } from 'wagmi';
 import { getAddress, abi } from '../contracts/energy-exchange';
 import { parseEther, formatEther, decodeEventLog, type Hash } from 'viem';
@@ -8,6 +8,7 @@ import { useToast } from '../components/ui/use-toast';
 import { useUserManagementContext } from './user-management-provider';
 
 interface EnergyOffer {
+  id: bigint; // Add offerId to the interface
   producer: `0x${string}`;
   quantity: bigint;
   pricePerUnit: bigint;
@@ -18,6 +19,8 @@ interface EnergyOffer {
   isValidated: boolean;
   isCompleted: boolean;
 }
+
+type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, bigint, boolean, `0x${string}`, boolean, boolean];
 
 interface User {
   address: `0x${string}`;
@@ -40,7 +43,16 @@ interface EnergyExchangeContextType {
 const EnergyExchangeContext = createContext<EnergyExchangeContextType | undefined>(undefined);
 
 function parseContractError(error: any): string {
-  console.error('Contract error:', error);
+  console.error('Contract error details:', {
+    message: error.message,
+    cause: error.cause,
+    data: error.data,
+    details: error
+  });
+
+  if (error.cause?.data?.message) {
+    return error.cause.data.message;
+  }
 
   const errorMessage = error.message || '';
   const errorData = error.data || '';
@@ -78,7 +90,40 @@ function parseContractError(error: any): string {
     return 'Transaction nonce error. Please reset your wallet or try again.';
   }
 
-  return 'An error occurred while processing the transaction. Please try again.';
+  return `Transaction failed: ${errorMessage || 'Unknown error'}`;
+}
+
+function convertToOffer(offerResponse: OfferResponse, id: bigint): EnergyOffer {
+  return {
+    id, // Include the offerId
+    producer: offerResponse[0],
+    quantity: offerResponse[1],
+    pricePerUnit: offerResponse[2],
+    energyType: offerResponse[3],
+    timestamp: offerResponse[4],
+    isActive: offerResponse[5],
+    buyer: offerResponse[6],
+    isValidated: offerResponse[7],
+    isCompleted: offerResponse[8]
+  };
+}
+
+// Debounce function to limit the rate of function calls
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+
+  return (...args: Parameters<T>) => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+
+    timeout = setTimeout(() => {
+      func(...args);
+    }, wait);
+  };
 }
 
 export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
@@ -90,6 +135,87 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [currentUserState, setCurrentUserState] = useState<User | null>(null);
   const { isAdmin, isProducer, isConsumer } = useUserManagementContext();
+  const contractAddress = getAddress(chainId);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  // Create a memoized fetchOffers function
+  const fetchOffers = useCallback(async () => {
+    if (!publicClient || !isConnected) return;
+
+    try {
+      let index = 0;
+      const fetchedOffers: EnergyOffer[] = [];
+      const batchSize = 10; // Fetch offers in batches
+      
+      while (index < 100) { // Set a reasonable upper limit
+        try {
+          const promises = [];
+          for (let i = 0; i < batchSize; i++) {
+            promises.push(
+              publicClient.readContract({
+                address: contractAddress,
+                abi,
+                functionName: 'offers',
+                args: [BigInt(index + i)],
+              })
+            );
+          }
+
+          const responses = await Promise.allSettled(promises);
+          let hasValidResponse = false;
+
+          responses.forEach((response, i) => {
+            if (response.status === 'fulfilled') {
+              hasValidResponse = true;
+              fetchedOffers.push(convertToOffer(response.value as OfferResponse, BigInt(index + i)));
+            }
+          });
+
+          if (!hasValidResponse) {
+            break; // No valid responses in this batch, we've reached the end
+          }
+
+          index += batchSize;
+        } catch (error) {
+          break; // Error fetching this batch, we've reached the end
+        }
+      }
+
+      setOffers(fetchedOffers);
+    } catch (error) {
+      console.error('Error fetching offers:', error);
+    }
+  }, [publicClient, isConnected, contractAddress]);
+
+  // Create a debounced version of fetchOffers
+  const debouncedFetchOffers = useCallback(
+    debounce(() => {
+      fetchOffers();
+    }, 1000), // Wait 1 second between fetches
+    [fetchOffers]
+  );
+
+  // Initial fetch and event setup
+  useEffect(() => {
+    if (isInitialLoad) {
+      fetchOffers();
+      setIsInitialLoad(false);
+    }
+
+    // Set up event listeners for offer-related events
+    if (publicClient) {
+      const unwatch = publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'OfferCreated',
+        onLogs: debouncedFetchOffers,
+      });
+
+      return () => {
+        unwatch();
+      };
+    }
+  }, [publicClient, isConnected, contractAddress, fetchOffers, debouncedFetchOffers, isInitialLoad]);
 
   useEffect(() => {
     async function updateUserStatus() {
@@ -126,13 +252,24 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   }, [isConnected]);
 
-  const contractAddress = getAddress(chainId);
   const { writeContractAsync } = useWriteContract();
 
   const handleAddUser = async (userAddress: string, isProducer: boolean) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
+
+    if (!address) {
+      throw new Error('No wallet address found');
+    }
+
+    console.log('Adding user with params:', {
+      contractAddress,
+      userAddress,
+      isProducer,
+      callerAddress: address
+    });
+
     try {
       const hash = await writeContractAsync({
         address: contractAddress,
@@ -146,7 +283,8 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: "Please wait while the user is being added...",
       });
 
-      await publicClient?.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      console.log('Transaction receipt:', receipt);
 
       toast({
         title: "User Added",
@@ -154,12 +292,13 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       });
     } catch (error) {
       console.error('Add user error:', error);
+      const errorMessage = parseContractError(error);
       toast({
         title: "Failed to Add User",
-        description: parseContractError(error),
+        description: errorMessage,
         variant: "destructive",
       });
-      throw error;
+      throw new Error(errorMessage);
     }
   };
 
@@ -233,6 +372,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         title: "Offer Created",
         description: "Your energy offer has been successfully created.",
       });
+
+      // Manually trigger a fetch after creating an offer
+      await fetchOffers();
     } catch (error) {
       console.error('Create offer error:', error);
       toast({
@@ -268,6 +410,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         title: "Purchase Successful",
         description: "Your energy purchase has been completed.",
       });
+
+      // Manually trigger a fetch after purchase
+      await fetchOffers();
     } catch (error) {
       console.error('Purchase error:', error);
       toast({
@@ -302,6 +447,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         title: "Delivery Validated",
         description: "The energy delivery has been successfully validated.",
       });
+
+      // Manually trigger a fetch after validation
+      await fetchOffers();
     } catch (error) {
       console.error('Validation error:', error);
       toast({
@@ -336,6 +484,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         title: "Offer Cancelled",
         description: "The offer has been successfully cancelled.",
       });
+
+      // Manually trigger a fetch after cancellation
+      await fetchOffers();
     } catch (error) {
       console.error('Cancel offer error:', error);
       toast({

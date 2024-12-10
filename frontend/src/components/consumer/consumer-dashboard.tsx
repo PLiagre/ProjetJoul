@@ -6,7 +6,7 @@ import { formatEther } from "viem";
 
 export function ConsumerDashboard() {
   const { address } = useAccount();
-  const { offers, purchaseOffer } = useEnergyExchange();
+  const { offers, purchaseOffer, currentUser } = useEnergyExchange();
 
   const { data: maticBalance } = useBalance({
     address: address,
@@ -16,6 +16,33 @@ export function ConsumerDashboard() {
     address: address,
     token: process.env.NEXT_PUBLIC_JOUL_TOKEN_ADDRESS as `0x${string}`,
   });
+
+  // Add access control checks
+  if (!address) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold mb-4">Please connect your wallet</h1>
+      </div>
+    );
+  }
+
+  if (currentUser?.isProducer) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold mb-4">Access Restricted</h1>
+        <p className="text-gray-400">Producers cannot access the consumer dashboard.</p>
+      </div>
+    );
+  }
+
+  if (!currentUser?.isRegistered) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold mb-4">Access Restricted</h1>
+        <p className="text-gray-400">You need to be registered as a consumer to access this page.</p>
+      </div>
+    );
+  }
 
   const availableOffers = offers.filter(
     (offer) => offer.isActive && !offer.isCompleted && !offer.buyer
@@ -27,7 +54,21 @@ export function ConsumerDashboard() {
       offer.isCompleted
   );
 
+  // Format quantity from Wh to kWh for display
+  const formatQuantity = (whQuantity: bigint) => {
+    return (Number(whQuantity) / 1000).toFixed(3);
+  };
+
+  // Format price from wei/Wh to MATIC/kWh
+  const formatPrice = (weiPerWh: bigint) => {
+    // Convert from wei/Wh to MATIC/kWh by multiplying by 1000 (to get per kWh) and formatting to MATIC
+    const weiPerKwh = weiPerWh * BigInt(1000);
+    return formatEther(weiPerKwh);
+  };
+
   const handlePurchase = async (offerId: bigint, totalPrice: bigint) => {
+    if (!address) return;
+    
     try {
       await purchaseOffer(offerId, totalPrice);
     } catch (error) {
@@ -59,24 +100,24 @@ export function ConsumerDashboard() {
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
           <h2 className="text-2xl font-bold mb-4 text-white">Available Energy Offers</h2>
           <div className="space-y-4">
-            {availableOffers.map((offer, index) => {
+            {availableOffers.map((offer) => {
               const totalPrice = offer.pricePerUnit * offer.quantity;
               return (
                 <div
-                  key={index}
+                  key={offer.id.toString()}
                   className="bg-gray-700 rounded-lg p-4"
                 >
                   <div className="grid grid-cols-2 gap-2 text-white mb-4">
                     <p>Producer: {offer.producer}</p>
                     <p>Energy Type: {offer.energyType}</p>
-                    <p>Quantity: {offer.quantity.toString()} kWh</p>
-                    <p>Price per kWh: {formatEther(offer.pricePerUnit)} MATIC</p>
+                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
                     <p className="col-span-2">
                       Total Price: {formatEther(totalPrice)} MATIC
                     </p>
                   </div>
                   <button
-                    onClick={() => handlePurchase(BigInt(index), totalPrice)}
+                    onClick={() => handlePurchase(offer.id, totalPrice)}
                     className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Purchase
@@ -94,16 +135,16 @@ export function ConsumerDashboard() {
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
           <h2 className="text-2xl font-bold mb-4 text-white">Purchase History</h2>
           <div className="space-y-4">
-            {purchaseHistory.map((offer, index) => (
+            {purchaseHistory.map((offer) => (
               <div
-                key={index}
+                key={offer.id.toString()}
                 className="bg-gray-700 rounded-lg p-4"
               >
                 <div className="grid grid-cols-2 gap-2 text-white">
                   <p>Producer: {offer.producer}</p>
                   <p>Energy Type: {offer.energyType}</p>
-                  <p>Quantity: {offer.quantity.toString()} kWh</p>
-                  <p>Price per kWh: {formatEther(offer.pricePerUnit)} MATIC</p>
+                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
                   <p>Status: {offer.isValidated ? "Validated" : "Pending"}</p>
                   <p>
                     Total Paid: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC
@@ -128,16 +169,16 @@ export function ConsumerDashboard() {
                   !offer.isCompleted &&
                   !offer.isValidated
               )
-              .map((offer, index) => (
+              .map((offer) => (
                 <div
-                  key={index}
+                  key={offer.id.toString()}
                   className="bg-gray-700 rounded-lg p-4"
                 >
                   <div className="grid grid-cols-2 gap-2 text-white">
                     <p>Producer: {offer.producer}</p>
                     <p>Energy Type: {offer.energyType}</p>
-                    <p>Quantity: {offer.quantity.toString()} kWh</p>
-                    <p>Price per kWh: {formatEther(offer.pricePerUnit)} MATIC</p>
+                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
                     <p className="col-span-2 text-yellow-400">
                       Status: Waiting for ENEDIS validation (24h lock period)
                     </p>

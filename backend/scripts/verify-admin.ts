@@ -2,7 +2,7 @@ import { ethers } from "hardhat";
 import { UserManagement } from "../typechain-types";
 
 async function main() {
-  const userManagementAddress = "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9";
+  const userManagementAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
   const deployer = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
   const UserManagementFactory = await ethers.getContractFactory("UserManagement");
