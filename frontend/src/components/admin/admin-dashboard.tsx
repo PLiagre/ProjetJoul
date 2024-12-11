@@ -4,10 +4,11 @@ import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
 import { useToast } from "../../components/ui/use-toast";
+import { formatEther } from "viem";
 
 export function AdminDashboard() {
   const { address, isConnected } = useAccount();
-  const { addUser, removeUser, currentUser } = useEnergyExchange();
+  const { addUser, removeUser, currentUser, offers, validateDelivery } = useEnergyExchange();
   const [newUserAddress, setNewUserAddress] = useState("");
   const [isProducer, setIsProducer] = useState(false);
   const { toast } = useToast();
@@ -73,13 +74,89 @@ export function AdminDashboard() {
     }
   };
 
+  // Format quantity from Wh to kWh for display
+  const formatQuantity = (whQuantity: bigint) => {
+    return (Number(whQuantity) / 1000).toFixed(3);
+  };
+
+  // Format price from wei/Wh to MATIC/kWh
+  const formatPrice = (weiPerWh: bigint) => {
+    const weiPerKwh = weiPerWh * BigInt(1000);
+    return formatEther(weiPerKwh);
+  };
+
+  const handleValidateDelivery = async (offerId: bigint, isValid: boolean) => {
+    try {
+      await validateDelivery(offerId, isValid);
+      toast({
+        title: "Success",
+        description: `Energy transfer has been ${isValid ? 'validated' : 'rejected'}.`,
+      });
+    } catch (error: any) {
+      console.error("Failed to validate delivery:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to validate delivery. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Filter pending transfers that need validation
+  const pendingTransfers = offers.filter(
+    (offer) => 
+      offer.buyer !== '0x0000000000000000000000000000000000000000' && 
+      !offer.isCompleted && 
+      !offer.isValidated
+  );
+
   return (
     <div className="container mx-auto p-4">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">Admin Dashboard (ENEDIS)</h1>
 
+        {/* Pending Energy Transfers Section */}
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">Add User</h2>
+          <h2 className="text-2xl font-bold mb-4 text-white">Pending Energy Transfers</h2>
+          <div className="space-y-4">
+            {pendingTransfers.map((offer) => (
+              <div
+                key={offer.id.toString()}
+                className="bg-gray-700 rounded-lg p-4"
+              >
+                <div className="grid grid-cols-2 gap-2 text-white mb-4">
+                  <p>Producer: {offer.producer}</p>
+                  <p>Consumer: {offer.buyer}</p>
+                  <p>Energy Type: {offer.energyType}</p>
+                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
+                  <p>Total Price: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC</p>
+                </div>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => handleValidateDelivery(offer.id, true)}
+                    className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  >
+                    Validate Transfer
+                  </button>
+                  <button
+                    onClick={() => handleValidateDelivery(offer.id, false)}
+                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    Reject Transfer
+                  </button>
+                </div>
+              </div>
+            ))}
+            {pendingTransfers.length === 0 && (
+              <p className="text-gray-400">No pending transfers to validate</p>
+            )}
+          </div>
+        </div>
+
+        {/* User Management Section */}
+        <div className="bg-gray-800 rounded-lg p-6 mb-8">
+          <h2 className="text-2xl font-bold mb-4 text-white">User Management</h2>
           <form onSubmit={handleAddUser} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-white">
@@ -123,10 +200,12 @@ export function AdminDashboard() {
         <div className="bg-gray-800 rounded-lg p-6">
           <h2 className="text-2xl font-bold mb-4 text-white">Instructions</h2>
           <ul className="list-disc list-inside space-y-2 text-white">
-            <li>Enter the Ethereum address of the user you want to add</li>
-            <li>Check the box if you want to register them as a Producer</li>
+            <li>Review pending energy transfers in the top section</li>
+            <li>Validate transfers after confirming energy delivery on the grid</li>
+            <li>Reject transfers if energy delivery cannot be confirmed</li>
+            <li>Use the user management section below to add new users to the system</li>
             <li>The address must be a valid Ethereum address (0x followed by 40 hexadecimal characters)</li>
-            <li>You must have admin privileges to manage users</li>
+            <li>You must have admin privileges to manage users and validate transfers</li>
           </ul>
         </div>
       </div>

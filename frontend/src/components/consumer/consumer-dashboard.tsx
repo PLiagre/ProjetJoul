@@ -45,7 +45,12 @@ export function ConsumerDashboard() {
   }
 
   const availableOffers = offers.filter(
-    (offer) => offer.isActive && !offer.isCompleted && !offer.buyer
+    (offer) => {
+      const validProducer = offer.producer !== '0x0000000000000000000000000000000000000000';
+      const isAvailable = validProducer && offer.isActive && !offer.isCompleted && 
+        (offer.buyer === '0x0000000000000000000000000000000000000000' || !offer.buyer);
+      return isAvailable;
+    }
   );
 
   const purchaseHistory = offers.filter(
@@ -66,10 +71,12 @@ export function ConsumerDashboard() {
     return formatEther(weiPerKwh);
   };
 
-  const handlePurchase = async (offerId: bigint, totalPrice: bigint) => {
+  const handlePurchase = async (offerId: bigint, pricePerUnit: bigint, quantity: bigint) => {
     if (!address) return;
     
     try {
+      // Calculate total price in wei (pricePerUnit is already in wei/Wh and quantity is in Wh)
+      const totalPrice = pricePerUnit * quantity;
       await purchaseOffer(offerId, totalPrice);
     } catch (error) {
       console.error("Error purchasing offer:", error);
@@ -117,7 +124,7 @@ export function ConsumerDashboard() {
                     </p>
                   </div>
                   <button
-                    onClick={() => handlePurchase(offer.id, totalPrice)}
+                    onClick={() => handlePurchase(offer.id, offer.pricePerUnit, offer.quantity)}
                     className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Purchase
