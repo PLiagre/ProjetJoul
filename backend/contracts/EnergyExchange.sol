@@ -14,7 +14,7 @@ import "./UserManagement.sol";
  * - Gestion des offres d'énergie
  * - Distribution des frais
  * - Intégration avec ENEDIS
- * - Système de lock 24h
+ * - Système de validation avec limite de 24h
  */
 contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     bytes32 public constant ENEDIS_ROLE = keccak256("ENEDIS_ROLE");
@@ -48,7 +48,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
 
     address public immutable enedisAddress;
     address public immutable poolAddress;
-    uint256 public constant LOCK_PERIOD = 24 hours;
+    uint256 public constant VALIDATION_DEADLINE = 24 hours;
 
     event OfferCreated(
         uint256 indexed offerId,
@@ -199,6 +199,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
 
     /**
      * @dev Validation ENEDIS et distribution des fonds
+     * L'offre doit être validée dans les 24h suivant l'achat
      */
     function validateAndDistribute(uint256 offerId, bool isValid) 
         external 
@@ -210,8 +211,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer != address(0), "Offer not purchased");
         require(
-            block.timestamp >= offerLocks[offerId] + LOCK_PERIOD,
-            "Lock period not ended"
+            block.timestamp <= offerLocks[offerId] + VALIDATION_DEADLINE,
+            "Validation deadline exceeded"
         );
 
         offer.isValidated = isValid;
@@ -227,6 +228,33 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             (bool success,) = payable(offer.buyer).call{value: totalPrice}("");
             require(success, "Refund failed");
         }
+    }
+
+    /**
+     * @dev Annule une offre si elle n'a pas été validée dans les 24h
+     */
+    function cancelExpiredOffer(uint256 offerId)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        EnergyOffer storage offer = offers[offerId];
+        require(!offer.isCompleted, "Offer already completed");
+        require(offer.buyer != address(0), "Offer not purchased");
+        require(
+            block.timestamp > offerLocks[offerId] + VALIDATION_DEADLINE,
+            "Validation deadline not exceeded"
+        );
+
+        offer.isCompleted = true;
+        offer.isValidated = false;
+
+        // Remboursement automatique de l'acheteur
+        uint256 totalPrice = offer.quantity * offer.pricePerUnit;
+        (bool success,) = payable(offer.buyer).call{value: totalPrice}("");
+        require(success, "Refund failed");
+
+        emit OfferValidated(offerId, false);
     }
 
     /**
