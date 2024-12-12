@@ -40,6 +40,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         address buyer;
         bool isValidated;
         bool isCompleted;
+        bool isPendingCreation; // New field for creation validation
     }
 
     mapping(uint256 => EnergyOffer) public offers;
@@ -65,6 +66,11 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     );
 
     event OfferValidated(
+        uint256 indexed offerId,
+        bool success
+    );
+
+    event OfferCreationValidated(
         uint256 indexed offerId,
         bool success
     );
@@ -135,7 +141,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Crée une nouvelle offre d'énergie
+     * @dev Crée une nouvelle offre d'énergie (en attente de validation)
      */
     function createOffer(
         uint256 quantity,
@@ -154,10 +160,11 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             pricePerUnit: pricePerUnit,
             energyType: energyType,
             timestamp: block.timestamp,
-            isActive: true,
+            isActive: false, // Initially not active until validated
             buyer: address(0),
             isValidated: false,
-            isCompleted: false
+            isCompleted: false,
+            isPendingCreation: true // New offer pending validation
         });
 
         emit OfferCreated(
@@ -169,6 +176,30 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         );
 
         return offerId;
+    }
+
+    /**
+     * @dev Validation de la création d'offre par ENEDIS
+     */
+    function validateOfferCreation(uint256 offerId, bool isValid) 
+        external 
+        onlyRole(ENEDIS_ROLE) 
+        whenNotPaused 
+    {
+        EnergyOffer storage offer = offers[offerId];
+        require(offer.isPendingCreation, "Offer not pending creation");
+        require(!offer.isActive, "Offer already active");
+
+        offer.isPendingCreation = false;
+        
+        if (isValid) {
+            offer.isActive = true;
+            // Mint 1% of kWh amount in JOUL tokens to producer
+            uint256 joulReward = offer.quantity / 100; // 1% of kWh
+            joulToken.mintProductionReward(offer.producer, joulReward);
+        }
+
+        emit OfferCreationValidated(offerId, isValid);
     }
 
     /**
@@ -186,6 +217,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         require(offer.isActive, "Offer is not active");
         require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer == address(0), "Offer already purchased");
+        require(!offer.isPendingCreation, "Offer pending creation validation");
 
         uint256 totalPrice = offer.quantity * offer.pricePerUnit;
         require(msg.value == totalPrice, "Incorrect payment amount");
@@ -281,7 +313,6 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         require(poolSuccess, "Pool transfer failed");
 
         // Mint des récompenses JOUL
-        joulToken.mintProductionReward(offer.producer, offer.quantity);
         joulToken.mintSaleReward(offer.producer, totalAmount);
         joulToken.mintPurchaseReward(offer.buyer, totalAmount);
 

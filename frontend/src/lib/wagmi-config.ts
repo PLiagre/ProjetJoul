@@ -10,7 +10,7 @@ export const wagmiConfig = getDefaultConfig({
   transports: {
     [hardhat.id]: http(),
     [sepolia.id]: http()
-  },
+  }
 })
 
 // Contract addresses from our latest deployment

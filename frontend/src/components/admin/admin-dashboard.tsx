@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAccount } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
 import { useToast } from "../../components/ui/use-toast";
@@ -8,7 +8,7 @@ import { formatEther } from "viem";
 
 export function AdminDashboard() {
   const { address, isConnected } = useAccount();
-  const { addUser, removeUser, currentUser, offers, validateDelivery } = useEnergyExchange();
+  const { addUser, removeUser, currentUser, offers, validateDelivery, validateOfferCreation } = useEnergyExchange();
   const [newUserAddress, setNewUserAddress] = useState("");
   const [isProducer, setIsProducer] = useState(false);
   const { toast } = useToast();
@@ -102,6 +102,28 @@ export function AdminDashboard() {
     }
   };
 
+  const handleValidateOfferCreation = async (offerId: bigint, isValid: boolean) => {
+    try {
+      await validateOfferCreation(offerId, isValid);
+      toast({
+        title: "Success",
+        description: `Energy offer creation has been ${isValid ? 'validated' : 'rejected'}.`,
+      });
+    } catch (error: any) {
+      console.error("Failed to validate offer creation:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to validate offer creation. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Filter pending offer creations that need validation
+  const pendingOfferCreations = offers.filter(
+    (offer) => offer.isPendingCreation
+  );
+
   // Filter pending transfers that need validation
   const pendingTransfers = offers.filter(
     (offer) => 
@@ -114,6 +136,43 @@ export function AdminDashboard() {
     <div className="container mx-auto p-4">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold mb-8">Admin Dashboard (ENEDIS)</h1>
+
+        {/* Pending Offer Creations Section */}
+        <div className="bg-gray-800 rounded-lg p-6 mb-8">
+          <h2 className="text-2xl font-bold mb-4 text-white">Pending Offer Creations</h2>
+          <div className="space-y-4">
+            {pendingOfferCreations.map((offer) => (
+              <div
+                key={offer.id.toString()}
+                className="bg-gray-700 rounded-lg p-4"
+              >
+                <div className="grid grid-cols-2 gap-2 text-white mb-4">
+                  <p>Producer: {offer.producer}</p>
+                  <p>Energy Type: {offer.energyType}</p>
+                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
+                </div>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => handleValidateOfferCreation(offer.id, true)}
+                    className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  >
+                    Validate Creation
+                  </button>
+                  <button
+                    onClick={() => handleValidateOfferCreation(offer.id, false)}
+                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    Reject Creation
+                  </button>
+                </div>
+              </div>
+            ))}
+            {pendingOfferCreations.length === 0 && (
+              <p className="text-gray-400">No pending offer creations to validate</p>
+            )}
+          </div>
+        </div>
 
         {/* Pending Energy Transfers Section */}
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
@@ -200,7 +259,9 @@ export function AdminDashboard() {
         <div className="bg-gray-800 rounded-lg p-6">
           <h2 className="text-2xl font-bold mb-4 text-white">Instructions</h2>
           <ul className="list-disc list-inside space-y-2 text-white">
-            <li>Review pending energy transfers in the top section</li>
+            <li>Review pending offer creations in the top section</li>
+            <li>Validate or reject new energy offers from producers</li>
+            <li>Review pending energy transfers in the middle section</li>
             <li>Validate transfers after confirming energy delivery on the grid</li>
             <li>Reject transfers if energy delivery cannot be confirmed</li>
             <li>Use the user management section below to add new users to the system</li>

@@ -18,9 +18,10 @@ interface EnergyOffer {
   buyer: `0x${string}`;
   isValidated: boolean;
   isCompleted: boolean;
+  isPendingCreation: boolean;
 }
 
-type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, bigint, boolean, `0x${string}`, boolean, boolean];
+type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, bigint, boolean, `0x${string}`, boolean, boolean, boolean];
 
 interface User {
   address: `0x${string}`;
@@ -37,6 +38,7 @@ interface EnergyExchangeContextType {
   createOffer: (quantity: number, pricePerUnit: number, energyType: string) => Promise<void>;
   purchaseOffer: (offerId: bigint, totalPrice: bigint) => Promise<void>;
   validateDelivery: (offerId: bigint, isValid: boolean) => Promise<void>;
+  validateOfferCreation: (offerId: bigint, isValid: boolean) => Promise<void>;
   cancelOffer: (offerId: bigint) => Promise<void>;
 }
 
@@ -104,7 +106,8 @@ function convertToOffer(offerResponse: OfferResponse, id: bigint): EnergyOffer {
     isActive: offerResponse[5],
     buyer: offerResponse[6],
     isValidated: offerResponse[7],
-    isCompleted: offerResponse[8]
+    isCompleted: offerResponse[8],
+    isPendingCreation: offerResponse[9]
   };
 }
 
@@ -199,12 +202,15 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
 
     if (publicClient) {
-      const unwatchEvents = [
+      const eventNames = [
         'OfferCreated',
         'OfferPurchased',
         'OfferValidated',
+        'OfferCreationValidated',
         'OfferCancelled'
-      ].map(eventName => 
+      ] as const;
+
+      const unwatchEvents = eventNames.map(eventName => 
         publicClient.watchContractEvent({
           address: contractAddress,
           abi,
@@ -355,7 +361,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
 
       toast({
         title: "Offer Created",
-        description: "Your energy offer has been successfully created.",
+        description: "Your energy offer has been created and is pending Enedis validation.",
       });
 
       await fetchOffers();
@@ -363,6 +369,42 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       console.error('Create offer error:', error);
       toast({
         title: "Failed to Create Offer",
+        description: parseContractError(error),
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleValidateOfferCreation = async (offerId: bigint, isValid: boolean) => {
+    if (!writeContractAsync || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+    try {
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'validateOfferCreation',
+        args: [offerId, isValid],
+      });
+
+      toast({
+        title: "Validating Offer Creation",
+        description: "Please wait while the offer creation is being validated...",
+      });
+
+      await publicClient?.waitForTransactionReceipt({ hash });
+
+      toast({
+        title: "Offer Creation Validated",
+        description: `The energy offer creation has been ${isValid ? 'validated' : 'rejected'}.`,
+      });
+
+      await fetchOffers();
+    } catch (error) {
+      console.error('Offer creation validation error:', error);
+      toast({
+        title: "Validation Failed",
         description: parseContractError(error),
         variant: "destructive",
       });
@@ -380,7 +422,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         abi,
         functionName: 'purchaseOffer',
         args: [offerId],
-        value: totalPrice, // Envoi du montant en MATIC avec la transaction
+        value: totalPrice,
       });
 
       toast({
@@ -487,6 +529,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     createOffer: handleCreateOffer,
     purchaseOffer: handlePurchaseOffer,
     validateDelivery: handleValidateDelivery,
+    validateOfferCreation: handleValidateOfferCreation,
     cancelOffer: handleCancelOffer,
   };
 

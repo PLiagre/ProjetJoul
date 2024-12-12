@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
 import { formatEther } from "viem";
+import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
 
 export function ProducerDashboard() {
   const { address } = useAccount();
@@ -18,7 +19,7 @@ export function ProducerDashboard() {
 
   const { data: joulBalance } = useBalance({
     address: address,
-    token: process.env.NEXT_PUBLIC_JOUL_TOKEN_ADDRESS as `0x${string}`,
+    token: CONTRACT_ADDRESSES.JOUL_TOKEN as `0x${string}`,
   });
 
   // Add access control checks
@@ -161,12 +162,12 @@ export function ProducerDashboard() {
             </form>
           </div>
 
-          {/* Active Offers */}
+          {/* Pending Offers */}
           <div className="bg-gray-800 rounded-lg p-6">
-            <h2 className="text-2xl font-bold mb-4 text-white">Your Active Offers</h2>
+            <h2 className="text-2xl font-bold mb-4 text-white">Pending Offers</h2>
             <div className="space-y-4">
               {producerOffers
-                .filter((offer) => offer.isActive && !offer.isCompleted)
+                .filter((offer) => offer.isPendingCreation)
                 .map((offer, index) => (
                   <div
                     key={index}
@@ -176,13 +177,39 @@ export function ProducerDashboard() {
                       <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
                       <p>Price: {formatPrice(offer.pricePerUnit)} MATIC/kWh</p>
                       <p>Type: {offer.energyType}</p>
-                      <p>Status: {offer.isValidated ? "Validated" : "Pending"}</p>
+                      <p>Status: Pending Enedis Validation</p>
                     </div>
                   </div>
                 ))}
-              {producerOffers.filter((offer) => offer.isActive && !offer.isCompleted)
-                .length === 0 && <p className="text-gray-400">No active offers</p>}
+              {producerOffers.filter((offer) => offer.isPendingCreation).length === 0 && (
+                <p className="text-gray-400">No pending offers</p>
+              )}
             </div>
+          </div>
+        </div>
+
+        {/* Active Offers */}
+        <div className="bg-gray-800 rounded-lg p-6 mb-8">
+          <h2 className="text-2xl font-bold mb-4 text-white">Active Offers</h2>
+          <div className="space-y-4">
+            {producerOffers
+              .filter((offer) => offer.isActive && !offer.isCompleted && !offer.isPendingCreation)
+              .map((offer, index) => (
+                <div
+                  key={index}
+                  className="bg-gray-700 rounded-lg p-4"
+                >
+                  <div className="grid grid-cols-2 gap-2 text-white">
+                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Price: {formatPrice(offer.pricePerUnit)} MATIC/kWh</p>
+                    <p>Type: {offer.energyType}</p>
+                    <p>Status: Active</p>
+                  </div>
+                </div>
+              ))}
+            {producerOffers.filter((offer) => offer.isActive && !offer.isCompleted && !offer.isPendingCreation).length === 0 && (
+              <p className="text-gray-400">No active offers</p>
+            )}
           </div>
         </div>
 
