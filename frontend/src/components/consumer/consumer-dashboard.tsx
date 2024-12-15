@@ -2,7 +2,8 @@
 
 import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
-import { formatEther } from "viem";
+import { formatEther, parseEther } from "viem";
+import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
 
 export function ConsumerDashboard() {
   const { address } = useAccount();
@@ -14,7 +15,7 @@ export function ConsumerDashboard() {
 
   const { data: joulBalance } = useBalance({
     address: address,
-    token: process.env.NEXT_PUBLIC_JOUL_TOKEN_ADDRESS as `0x${string}`,
+    token: CONTRACT_ADDRESSES.JOUL_TOKEN as `0x${string}`,
   });
 
   // Add access control checks
@@ -46,9 +47,11 @@ export function ConsumerDashboard() {
     return formatEther(weiPerKwh);
   };
 
-  const handlePurchase = async (offerId: bigint, totalPrice: bigint) => {
+  const handlePurchase = async (offerId: bigint, totalPriceInMatic: string) => {
     try {
-      await purchaseOffer(offerId, totalPrice);
+      // Convert the total price from MATIC to wei
+      const totalPriceInWei = parseEther(totalPriceInMatic);
+      await purchaseOffer(offerId, totalPriceInWei);
     } catch (error) {
       console.error("Error purchasing offer:", error);
     }
@@ -92,28 +95,33 @@ export function ConsumerDashboard() {
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
           <h2 className="text-2xl font-bold mb-4 text-white">Available Energy Offers</h2>
           <div className="space-y-4">
-            {activeOffers.map((offer) => (
-              <div
-                key={offer.id.toString()}
-                className="bg-gray-700 rounded-lg p-4"
-              >
-                <div className="grid grid-cols-2 gap-2 text-white mb-4">
-                  <p>Producer: {offer.producer}</p>
-                  <p>Energy Type: {offer.energyType}</p>
-                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
-                  <p className="col-span-2">
-                    Total Price: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC
-                  </p>
-                </div>
-                <button
-                  onClick={() => handlePurchase(offer.id, offer.pricePerUnit * offer.quantity)}
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            {activeOffers.map((offer) => {
+              // Calculate total price in MATIC
+              const totalPriceInMatic = formatEther(offer.pricePerUnit * offer.quantity);
+              
+              return (
+                <div
+                  key={offer.id.toString()}
+                  className="bg-gray-700 rounded-lg p-4"
                 >
-                  Purchase Energy
-                </button>
-              </div>
-            ))}
+                  <div className="grid grid-cols-2 gap-2 text-white mb-4">
+                    <p>Producer: {offer.producer}</p>
+                    <p>Energy Type: {offer.energyType}</p>
+                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
+                    <p className="col-span-2">
+                      Total Price: {totalPriceInMatic} MATIC
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handlePurchase(offer.id, totalPriceInMatic)}
+                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Purchase Energy
+                  </button>
+                </div>
+              );
+            })}
             {activeOffers.length === 0 && (
               <p className="text-gray-400">No energy offers available</p>
             )}
