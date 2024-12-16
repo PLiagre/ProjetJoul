@@ -28,6 +28,7 @@ export const wagmiConfig = getDefaultConfig({
   appName: 'JOUL Energy Exchange',
   projectId: 'c6c9e3de6f50a53b26b9b9c4859d6025', // WalletConnect Project ID
   chains: [polygonAmoy, hardhat, sepolia],
+  ssr: true, // Enable server-side rendering support
   transports: {
     [polygonAmoy.id]: http(polygonAmoy.rpcUrls.default.http[0]),
     [hardhat.id]: http('http://127.0.0.1:8545'),

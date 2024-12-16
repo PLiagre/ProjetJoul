@@ -1,26 +1,36 @@
 "use client";
 
-import { WagmiConfig } from 'wagmi'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from '../lib/wagmi-config'
 import { EnergyExchangeProvider } from '../contexts/energy-exchange-provider'
 import { UserManagementProvider } from '../contexts/user-management-provider'
 import { Toaster } from '../components/ui/toaster'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import '@rainbow-me/rainbowkit/styles.css'
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
+import { WagmiProvider } from 'wagmi'
 
 // Create a client
 const queryClient = new QueryClient()
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <WagmiConfig config={wagmiConfig}>
-        <UserManagementProvider>
-          <EnergyExchangeProvider>
-            {children}
-            <Toaster />
-          </EnergyExchangeProvider>
-        </UserManagementProvider>
-      </WagmiConfig>
-    </QueryClientProvider>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider theme={darkTheme({
+          accentColor: '#2E3F6C',
+          accentColorForeground: 'white',
+          borderRadius: 'small',
+          fontStack: 'system',
+          overlayBlur: 'small',
+        })}>
+          <UserManagementProvider>
+            <EnergyExchangeProvider>
+              {children}
+              <Toaster />
+            </EnergyExchangeProvider>
+          </UserManagementProvider>
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
