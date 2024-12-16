@@ -24,7 +24,7 @@ const config: HardhatUserConfig = {
     polygonAmoy: {
       url: "https://rpc-amoy.polygon.technology",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 80001,
+      chainId: 80002,  // Correction du chainId pour Polygon Amoy
     },
     sepolia: {
       url: "https://rpc.sepolia.org",

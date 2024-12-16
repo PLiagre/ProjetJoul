@@ -1,5 +1,3 @@
-"use client";
-
 import { createContext, useContext, ReactNode, useEffect, useState, useCallback } from 'react';
 import { useAccount, useReadContract, useWriteContract, usePublicClient, useWalletClient, useChainId } from 'wagmi';
 import { getAddress, abi } from '../contracts/energy-exchange';
@@ -7,6 +5,8 @@ import { parseEther, formatEther, decodeEventLog, type Hash } from 'viem';
 import { useToast } from '../components/ui/use-toast';
 import { useUserManagementContext } from './user-management-provider';
 import { useUserManagementContract } from '../contracts/user-management';
+import { getContractAddresses } from '../lib/wagmi-config';
+
 
 interface EnergyOffer {
   id: bigint;
@@ -88,6 +88,12 @@ function parseContractError(error: any): string {
     }
     if (revertReason.includes('Not a consumer')) {
       return 'Only registered consumers can perform this action.';
+    }
+    if (revertReason.includes('Not authorized')) {
+      return 'You are not authorized to perform this action. Only ENEDIS can validate offers.';
+    }
+    if (revertReason.includes('Internal JSON-RPC error')) {
+      return 'Network error. Please try again with higher gas limit.';
     }
     return `Transaction failed: ${revertReason || 'Unknown reason'}`;
   }
@@ -391,15 +397,43 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   };
 
   const handleValidateOfferCreation = async (offerId: bigint, isValid: boolean) => {
-    if (!writeContractAsync || !isConnected) {
+    if (!writeContractAsync || !isConnected || !publicClient || !address) {
       throw new Error('Please connect your wallet first');
     }
     try {
+      console.log('Validating offer creation with params:', {
+        offerId: offerId.toString(),
+        isValid,
+        contractAddress,
+        connectedAddress: address
+      });
+
+      // Get the current gas price and add a buffer
+      const gasPrice = await publicClient.getGasPrice();
+      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10); // Add 20% buffer
+
+      // Estimate gas with a buffer
+      const gasEstimate = await publicClient.estimateContractGas({
+        address: contractAddress,
+        abi,
+        functionName: 'validateOfferCreation',
+        args: [offerId, isValid],
+        account: address,
+      });
+      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10); // Add 50% buffer
+
+      console.log('Transaction parameters:', {
+        gasPrice: bufferedGasPrice.toString(),
+        gasLimit: bufferedGas.toString()
+      });
+
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
         functionName: 'validateOfferCreation',
         args: [offerId, isValid],
+        gas: bufferedGas,
+        gasPrice: bufferedGasPrice,
       });
 
       toast({
@@ -407,7 +441,13 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: "Please wait while the offer creation is being validated...",
       });
 
-      await publicClient?.waitForTransactionReceipt({ hash });
+      // Wait for more confirmations on Polygon Amoy
+      const receipt = await publicClient.waitForTransactionReceipt({ 
+        hash,
+        confirmations: 3 // Wait for 3 confirmations
+      });
+
+      console.log('Transaction receipt:', receipt);
 
       toast({
         title: "Offer Creation Validated",
