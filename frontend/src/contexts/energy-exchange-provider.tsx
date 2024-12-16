@@ -6,6 +6,7 @@ import { getAddress, abi } from '../contracts/energy-exchange';
 import { parseEther, formatEther, decodeEventLog, type Hash } from 'viem';
 import { useToast } from '../components/ui/use-toast';
 import { useUserManagementContext } from './user-management-provider';
+import { useUserManagementContract } from '../contracts/user-management';
 
 interface EnergyOffer {
   id: bigint;
@@ -39,7 +40,7 @@ interface EnergyExchangeContextType {
   purchaseOffer: (offerId: bigint, totalPrice: bigint) => Promise<void>;
   validateDelivery: (offerId: bigint, isValid: boolean) => Promise<void>;
   validateOfferCreation: (offerId: bigint, isValid: boolean) => Promise<void>;
-  cancelOffer: (offerId: bigint) => Promise<void>;
+  cancelExpiredOffer: (offerId: bigint) => Promise<void>;
 }
 
 const EnergyExchangeContext = createContext<EnergyExchangeContextType | undefined>(undefined);
@@ -73,6 +74,21 @@ function parseContractError(error: any): string {
 
   if (errorMessage.includes('execution reverted')) {
     const revertReason = errorData.replace('Reverted ', '');
+    if (revertReason.includes('Validation deadline not exceeded')) {
+      return 'Cannot cancel offer yet - validation period has not expired.';
+    }
+    if (revertReason.includes('Offer already completed')) {
+      return 'This offer has already been completed.';
+    }
+    if (revertReason.includes('Offer not purchased')) {
+      return 'This offer has not been purchased yet.';
+    }
+    if (revertReason.includes('Not a producer')) {
+      return 'Only registered producers can perform this action.';
+    }
+    if (revertReason.includes('Not a consumer')) {
+      return 'Only registered consumers can perform this action.';
+    }
     return `Transaction failed: ${revertReason || 'Unknown reason'}`;
   }
 
@@ -139,7 +155,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const { isAdmin, isProducer, isConsumer } = useUserManagementContext();
   const contractAddress = getAddress(chainId);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-
+  const userManagementContract = useUserManagementContract();
   const fetchOffers = useCallback(async () => {
     if (!publicClient || !isConnected) return;
 
@@ -206,8 +222,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         'OfferCreated',
         'OfferPurchased',
         'OfferValidated',
-        'OfferCreationValidated',
-        'OfferCancelled'
+        'OfferCreationValidated'
       ] as const;
 
       const unwatchEvents = eventNames.map(eventName => 
@@ -273,8 +288,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
 
     try {
       const hash = await writeContractAsync({
-        address: contractAddress,
-        abi,
+        ...userManagementContract,
         functionName: 'addUser',
         args: [userAddress as `0x${string}`, isProducer],
       });
@@ -300,7 +314,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       });
       throw new Error(errorMessage);
     }
-  };
+};
 
   const handleRemoveUser = async (userAddress: string) => {
     if (!writeContractAsync || !isConnected) {
@@ -485,7 +499,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleCancelOffer = async (offerId: bigint) => {
+  const handleCancelExpiredOffer = async (offerId: bigint) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
@@ -493,25 +507,25 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
-        functionName: 'cancelUnvalidatedOffer',
+        functionName: 'cancelExpiredOffer',
         args: [offerId],
       });
 
       toast({
-        title: "Cancelling Offer",
-        description: "Please wait while the offer is being cancelled...",
+        title: "Cancelling Expired Offer",
+        description: "Please wait while the expired offer is being cancelled...",
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
 
       toast({
-        title: "Offer Cancelled",
-        description: "The offer has been successfully cancelled.",
+        title: "Expired Offer Cancelled",
+        description: "The expired offer has been successfully cancelled and funds returned.",
       });
 
       await fetchOffers();
     } catch (error) {
-      console.error('Cancel offer error:', error);
+      console.error('Cancel expired offer error:', error);
       toast({
         title: "Cancellation Failed",
         description: parseContractError(error),
@@ -530,7 +544,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     purchaseOffer: handlePurchaseOffer,
     validateDelivery: handleValidateDelivery,
     validateOfferCreation: handleValidateOfferCreation,
-    cancelOffer: handleCancelOffer,
+    cancelExpiredOffer: handleCancelExpiredOffer,
   };
 
   return (
