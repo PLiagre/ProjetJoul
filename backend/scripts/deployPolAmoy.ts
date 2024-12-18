@@ -98,7 +98,7 @@ async function main() {
       console.log("Granted ADMIN_ROLE to deployer for UserManagement");
 
       // Ajouter l'adresse supplémentaire en tant qu'admin
-      const additionalAdmin = "0xc0F3805550AE8e126245A3fc734aF49197591f32";
+      const additionalAdmin = "0x4d6371994557c161B3133BE641C4Fa013169522d";
       const additionalAdminTx = await userManagement.grantRole(ADMIN_ROLE, additionalAdmin);
       await additionalAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to additional admin: ${additionalAdmin}`);
