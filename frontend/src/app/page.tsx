@@ -6,6 +6,7 @@ import { AdminDashboard } from "../components/admin/admin-dashboard";
 import { ProducerDashboard } from "../components/producer/producer-dashboard";
 import { ConsumerDashboard } from "../components/consumer/consumer-dashboard";
 import { useUserManagementContext } from "../contexts/user-management-provider";
+import Header from "../components/shared/header";
 
 export default function Home() {
   const { isConnected, address } = useAccount();
@@ -41,36 +42,34 @@ export default function Home() {
     checkUserRole();
   }, [address, isAdmin, isProducer, isConsumer]);
 
-  if (!isConnected) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <h1 className="text-2xl font-bold mb-4">Welcome to Joul Energy Exchange</h1>
-        <p className="text-gray-400 mb-8">Please connect your wallet to continue</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-      </div>
-    );
-  }
-
-  switch (userRole) {
-    case 'admin':
-      return <AdminDashboard />;
-    case 'producer':
-      return <ProducerDashboard />;
-    case 'consumer':
-      return <ConsumerDashboard />;
-    default:
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen p-4">
-          <h1 className="text-2xl font-bold mb-4">Access Restricted</h1>
-          <p className="text-gray-400 mb-8">You don't have the required role to access this platform.</p>
-        </div>
-      );
-  }
+  return (
+    <div className="min-h-screen">
+      <Header />
+      
+      <main className="container mx-auto px-4 py-8">
+        {!isConnected ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <h2 className="text-2xl font-bold mb-4">Welcome to Joul Energy Exchange</h2>
+            <p className="text-gray-400 mb-8">Please connect your wallet to continue</p>
+          </div>
+        ) : loading ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+          </div>
+        ) : (
+          <>
+            {userRole === 'admin' && <AdminDashboard />}
+            {userRole === 'producer' && <ProducerDashboard />}
+            {userRole === 'consumer' && <ConsumerDashboard />}
+            {!userRole && (
+              <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                <h2 className="text-2xl font-bold mb-4">Access Restricted</h2>
+                <p className="text-gray-400 mb-8">You don't have the required role to access this platform.</p>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
 }
