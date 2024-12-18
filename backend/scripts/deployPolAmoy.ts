@@ -103,13 +103,14 @@ async function main() {
       await additionalAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to additional admin: ${additionalAdmin}`);
 
-      /*
+
       // Deuxième admin
-      const secondAdmin = "0x0000000000000000000000000000000000000000";
+      const secondAdmin = "0x8606684bD504EFBcb23B55C2729d77D328Fb62ad";
       const secondAdminTx = await userManagement.grantRole(ADMIN_ROLE, secondAdmin);
       await secondAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to second admin: ${secondAdmin}`);
-
+      
+      /*
       // Troisième admin
       const thirdAdmin = "0x0000000000000000000000000000000000000000";
       const thirdAdminTx = await userManagement.grantRole(ADMIN_ROLE, thirdAdmin);
@@ -131,9 +132,8 @@ async function main() {
         deployer: deployer.address,
         additionalAdmins: [
           additionalAdmin,
-          // Commenté pour l'instant
-          /*
           secondAdmin,
+                    /*
           thirdAdmin
           */
         ],
