@@ -30,6 +30,9 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     uint256 public constant PLATFORM_SHARE = 30;   // 3%
     uint256 public constant POOL_SHARE = 20;      // 2%
 
+// Constante pour 1 JOUL avec 18 décimales (1 * 10^18)
+uint256 private constant ONE_JOUL = 1000000000000000000;
+
     struct EnergyOffer {
         address producer;
         uint256 quantity;     // Wh
@@ -194,9 +197,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         
         if (isValid) {
             offer.isActive = true;
-            // Mint 1% of kWh amount in JOUL tokens to producer
-            uint256 joulReward = offer.quantity / 100; // 1% of kWh
-            joulToken.mintProductionReward(offer.producer, joulReward);
+            // Mint JOUL tokens using the contract's PRODUCTION_REWARD_RATE
+            joulToken.mintProductionReward(offer.producer, offer.quantity);
         }
 
         emit OfferCreationValidated(offerId, isValid);
@@ -312,9 +314,10 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         (bool poolSuccess,) = payable(poolAddress).call{value: poolAmount}("");
         require(poolSuccess, "Pool transfer failed");
 
-        // Mint des récompenses JOUL
-        joulToken.mintSaleReward(offer.producer, totalAmount);
-        joulToken.mintPurchaseReward(offer.buyer, totalAmount);
+        // Mint 0.5 JOUL each to producer and consumer
+        // Since JoulToken applies its own rates (0.5%), we need to pass 100 JOUL to get 0.5 JOUL
+        joulToken.mintSaleReward(offer.producer, ONE_JOUL * 100);
+        joulToken.mintPurchaseReward(offer.buyer, ONE_JOUL * 100);
 
         // Mint du NFT pour l'acheteur
         string memory uri = _generateTokenURI(offerId);

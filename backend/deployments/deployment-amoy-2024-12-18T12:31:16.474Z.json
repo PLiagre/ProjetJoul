@@ -1,0 +1,13 @@
+{
+  "network": "polygonAmoy",
+  "contracts": {
+    "JoulToken": "0x3c5344C89815549439a67b4D208DEFc15D7fD4f4",
+    "EnergyNFT": "0x636b89e7fC18fB2F518CA06B7CD0C130e773ab93",
+    "UserManagement": "0xA49a1F0413Cc3b1AdAe41a08b18c9bf178747a5e",
+    "EnergyExchange": "0x61c5326cc529f612e75bEC30cf5e56EE9AB52C59",
+    "ENEDIS": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "Pool": "0xA106FFeBF2152450b1958F0cA297dcEBFd883fb4"
+  },
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "timestamp": "2024-12-18T12:31:16.474Z"
+}

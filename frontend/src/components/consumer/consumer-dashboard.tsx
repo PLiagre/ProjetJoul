@@ -2,7 +2,7 @@
 
 import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
-import { formatEther, parseEther } from "viem";
+import { formatEther, formatUnits, parseEther } from "viem";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
 
 export function ConsumerDashboard() {
@@ -17,6 +17,11 @@ export function ConsumerDashboard() {
     address: address,
     token: CONTRACT_ADDRESSES.JOUL_TOKEN as `0x${string}`,
   });
+
+  // Format JOUL balance with 18 decimals and limit to 1 decimal place since we deal with 0.5 JOUL increments
+  const formattedJoulBalance = joulBalance 
+    ? Number(formatUnits(joulBalance.value, 18)).toFixed(1)
+    : "0";
 
   // Add access control checks
   if (!address) {
@@ -58,17 +63,22 @@ export function ConsumerDashboard() {
   };
 
   // Filter active offers (validated by Enedis and available for purchase)
-  const activeOffers = offers.filter(
-    (offer) => 
-      offer.isActive && 
-      !offer.isCompleted && 
-      !offer.isPendingCreation && 
-      offer.producer.toLowerCase() !== address?.toLowerCase()
-  );
+  const activeOffers = offers.filter((offer) => {
+    return (
+      !offer.isPendingCreation &&
+      offer.isActive &&
+      !offer.isCompleted &&
+      offer.buyer === '0x0000000000000000000000000000000000000000' &&
+      offer.producer.toLowerCase() !== address?.toLowerCase() &&
+      offer.producer !== '0x0000000000000000000000000000000000000000'
+    );
+  });
 
   // Filter user's purchases
   const userPurchases = offers.filter(
-    (offer) => offer.buyer.toLowerCase() === address?.toLowerCase()
+    (offer) => 
+      offer.buyer.toLowerCase() === address?.toLowerCase() && // User is buyer
+      !offer.isPendingCreation // Not pending creation
   );
 
   return (
@@ -85,8 +95,13 @@ export function ConsumerDashboard() {
               <p className="text-white text-xl font-semibold">{maticBalance?.formatted || "0"} MATIC</p>
             </div>
             <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 mb-2">JOUL Balance</p>
-              <p className="text-white text-xl font-semibold">{joulBalance?.formatted || "0"} JOUL</p>
+              <p className="text-gray-400 mb-2 flex items-center">
+                JOUL Balance
+                <span className="ml-2 text-xs bg-gray-600 px-2 py-1 rounded" title="JOUL tokens are rewards for validated energy transactions. You receive 0.5 JOUL for each validated purchase.">
+                  ?
+                </span>
+              </p>
+              <p className="text-white text-xl font-semibold">{formattedJoulBalance} JOUL</p>
             </div>
           </div>
         </div>

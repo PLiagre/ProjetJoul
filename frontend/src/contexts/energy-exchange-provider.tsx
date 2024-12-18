@@ -162,89 +162,127 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const contractAddress = getAddress(chainId);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const userManagementContract = useUserManagementContract();
+
   const fetchOffers = useCallback(async () => {
     if (!publicClient || !isConnected) return;
 
     try {
-      let index = 0;
       const fetchedOffers: EnergyOffer[] = [];
-      const batchSize = 10;
+      const batchSize = 50;  // Increased batch size for better initial load
+      let consecutiveErrors = 0;
+      let index = 0;
       
-      while (index < 100) {
-        try {
-          const promises = [];
-          for (let i = 0; i < batchSize; i++) {
-            promises.push(
-              publicClient.readContract({
-                address: contractAddress,
-                abi,
-                functionName: 'offers',
-                args: [BigInt(index + i)],
-              })
-            );
-          }
+      // Continue fetching until we hit 3 consecutive batches with all errors
+      while (consecutiveErrors < 3 && index < 1000) {
+        const promises = Array.from({ length: batchSize }, (_, i) => {
+          return publicClient.readContract({
+            address: contractAddress,
+            abi,
+            functionName: 'offers',
+            args: [BigInt(index + i)],
+          }).then(response => ({
+            success: true,
+            data: response as OfferResponse,
+            index: index + i
+          })).catch(error => ({
+            success: false,
+            data: null,
+            index: index + i
+          }));
+        });
 
-          const responses = await Promise.allSettled(promises);
-          let hasValidResponse = false;
+        const results = await Promise.all(promises);
+        let validOffersInBatch = 0;
 
-          responses.forEach((response, i) => {
-            if (response.status === 'fulfilled') {
-              hasValidResponse = true;
-              fetchedOffers.push(convertToOffer(response.value as OfferResponse, BigInt(index + i)));
+        for (const result of results) {
+          if (result.success && result.data) {
+            const offer = convertToOffer(result.data, BigInt(result.index));
+            // Include all offers that have a valid producer address
+            if (offer.producer !== '0x0000000000000000000000000000000000000000') {
+              fetchedOffers.push(offer);
+              validOffersInBatch++;
             }
-          });
-
-          if (!hasValidResponse) {
-            break;
           }
-
-          index += batchSize;
-        } catch (error) {
-          break;
         }
+
+        if (validOffersInBatch === 0) {
+          consecutiveErrors++;
+        } else {
+          consecutiveErrors = 0;  // Reset if we found valid offers
+        }
+
+        index += batchSize;
       }
 
+      console.log(`Fetched ${fetchedOffers.length} valid offers`);
+      
+      // Sort offers by ID in descending order (newest first)
+      fetchedOffers.sort((a, b) => Number(b.id - a.id));
       setOffers(fetchedOffers);
     } catch (error) {
-      console.error('Error fetching offers:', error);
+      console.error('Error in fetchOffers:', error);
     }
   }, [publicClient, isConnected, contractAddress]);
 
+  // Remove debounce for direct fetchOffers calls
   const debouncedFetchOffers = useCallback(
     debounce(() => {
       fetchOffers();
-    }, 1000),
+    }, 500), // Reduced debounce time
     [fetchOffers]
   );
 
+  // Separate effect for initial load and wallet connection
   useEffect(() => {
-    if (isInitialLoad) {
+    if (isConnected && publicClient) {
       fetchOffers();
-      setIsInitialLoad(false);
     }
+  }, [isConnected, publicClient, fetchOffers]);
 
-    if (publicClient) {
-      const eventNames = [
-        'OfferCreated',
-        'OfferPurchased',
-        'OfferValidated',
-        'OfferCreationValidated'
-      ] as const;
-
-      const unwatchEvents = eventNames.map(eventName => 
-        publicClient.watchContractEvent({
-          address: contractAddress,
-          abi,
-          eventName,
-          onLogs: debouncedFetchOffers,
-        })
-      );
-
-      return () => {
-        unwatchEvents.forEach(unwatch => unwatch());
-      };
-    }
-  }, [publicClient, isConnected, contractAddress, fetchOffers, debouncedFetchOffers, isInitialLoad]);
+  // Separate effect for event watching
+  useEffect(() => {
+    if (!publicClient) return;
+  
+    const handleOfferPurchased = async (log: any) => {
+      console.log('OfferPurchased event received:', log);
+      await fetchOffers(); // Immediate fetch for purchase events
+    };
+  
+    const handleOtherEvents = debounce(() => {
+      fetchOffers();
+    }, 500);
+  
+    const unwatchEvents = [
+      publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'OfferPurchased',
+        onLogs: handleOfferPurchased,
+      }),
+      publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'OfferCreated',
+        onLogs: handleOtherEvents,
+      }),
+      publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'OfferValidated',
+        onLogs: handleOtherEvents,
+      }),
+      publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'OfferCreationValidated',
+        onLogs: handleOtherEvents,
+      })
+    ];
+  
+    return () => {
+      unwatchEvents.forEach(unwatch => unwatch());
+    };
+  }, [publicClient, contractAddress, fetchOffers]);
 
   useEffect(() => {
     async function updateUserStatus() {
@@ -275,11 +313,21 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   }, [address, isConnected, isAdmin, isProducer]);
 
   useEffect(() => {
-    if (!isConnected) {
-      setOffers([]);
-      setCurrentUserState(null);
+    if (offers.length > 0) {
+      const offersWithBuyers = offers.filter(
+        offer => offer.buyer !== '0x0000000000000000000000000000000000000000'
+      );
+      
+      console.log('Current offers with buyers:', offersWithBuyers.map(offer => ({
+        id: offer.id.toString(),
+        buyer: offer.buyer,
+        isPendingCreation: offer.isPendingCreation,
+        isActive: offer.isActive,
+        isCompleted: offer.isCompleted,
+        isValidated: offer.isValidated
+      })));
     }
-  }, [isConnected]);
+  }, [offers]);
 
   const { writeContractAsync } = useWriteContract();
 
@@ -384,6 +432,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: "Your energy offer has been created and is pending Enedis validation.",
       });
 
+      // Immediately fetch offers after creating a new one
       await fetchOffers();
     } catch (error) {
       console.error('Create offer error:', error);
@@ -471,6 +520,11 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       throw new Error('Please connect your wallet first');
     }
     try {
+      console.log('Purchasing offer:', {  // Add this
+        offerId: offerId.toString(),
+        totalPrice: totalPrice.toString()
+      });
+  
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
@@ -478,19 +532,20 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         args: [offerId],
         value: totalPrice,
       });
-
+  
       toast({
         title: "Processing Purchase",
         description: "Please wait while your purchase is being processed...",
       });
-
-      await publicClient?.waitForTransactionReceipt({ hash });
-
+  
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      console.log('Purchase transaction receipt:', receipt);  // Add this
+  
       toast({
         title: "Purchase Successful",
         description: "Your energy purchase has been completed.",
       });
-
+  
       await fetchOffers();
     } catch (error) {
       console.error('Purchase error:', error);
