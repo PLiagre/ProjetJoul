@@ -97,6 +97,26 @@ async function main() {
       await deployerAdminTx.wait();
       console.log("Granted ADMIN_ROLE to deployer for UserManagement");
 
+      // Ajouter l'adresse supplémentaire en tant qu'admin
+      const additionalAdmin = "0xc0F3805550AE8e126245A3fc734aF49197591f32";
+      const additionalAdminTx = await userManagement.grantRole(ADMIN_ROLE, additionalAdmin);
+      await additionalAdminTx.wait();
+      console.log(`Granted ADMIN_ROLE to additional admin: ${additionalAdmin}`);
+
+      /*
+      // Deuxième admin
+      const secondAdmin = "0x0000000000000000000000000000000000000000";
+      const secondAdminTx = await userManagement.grantRole(ADMIN_ROLE, secondAdmin);
+      await secondAdminTx.wait();
+      console.log(`Granted ADMIN_ROLE to second admin: ${secondAdmin}`);
+
+      // Troisième admin
+      const thirdAdmin = "0x0000000000000000000000000000000000000000";
+      const thirdAdminTx = await userManagement.grantRole(ADMIN_ROLE, thirdAdmin);
+      await thirdAdminTx.wait();
+      console.log(`Granted ADMIN_ROLE to third admin: ${thirdAdmin}`);
+      */
+
       // Sauvegarder les adresses des contrats
       const deploymentInfo = {
         network: "polygonAmoy",
@@ -109,6 +129,14 @@ async function main() {
           Pool: process.env.POOL_ADDRESS
         },
         deployer: deployer.address,
+        additionalAdmins: [
+          additionalAdmin,
+          // Commenté pour l'instant
+          /*
+          secondAdmin,
+          thirdAdmin
+          */
+        ],
         timestamp: new Date().toISOString()
       };
 
