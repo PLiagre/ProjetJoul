@@ -45,42 +45,6 @@ export function UserManagementProvider({
   const publicClient = usePublicClient();
   const { toast } = useToast();
 
-  const addUser = useCallback(async (userAddress: string, isProducer: boolean) => {
-    if (!address) return;
-    setIsAddingUser(true);
-    try {
-      const formattedAddress = validateAndFormatAddress(userAddress);
-      const hash = await writeContractAsync({
-        ...contract,
-        functionName: 'addUser',
-        args: [formattedAddress, isProducer],
-      });
-
-      toast({
-        title: "Adding User",
-        description: "Please wait while the user is being added...",
-      });
-
-      // Wait for transaction confirmation
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      toast({
-        title: "User Added",
-        description: `Successfully added user as ${isProducer ? 'producer' : 'consumer'}.`,
-      });
-    } catch (error: any) {
-      console.error("Failed to add user:", error);
-      toast({
-        title: "Failed to Add User",
-        description: error.message || "An error occurred while adding the user.",
-        variant: "destructive",
-      });
-      throw error;
-    } finally {
-      setIsAddingUser(false);
-    }
-  }, [address, writeContractAsync, contract, toast]);
-
   const isProducer = useCallback(async (userAddress: string): Promise<boolean> => {
     if (!publicClient || !contract.address) return false;
     try {
@@ -92,7 +56,7 @@ export function UserManagementProvider({
         functionName: 'hasRole',
         args: [formattedRole, formattedAddress],
       });
-      return Boolean(data);
+      return data as boolean;
     } catch (error) {
       console.error("Failed to check producer status:", error);
       return false;
@@ -110,7 +74,7 @@ export function UserManagementProvider({
         functionName: 'hasRole',
         args: [formattedRole, formattedAddress],
       });
-      return Boolean(data);
+      return data as boolean;
     } catch (error) {
       console.error("Failed to check consumer status:", error);
       return false;
@@ -128,12 +92,64 @@ export function UserManagementProvider({
         functionName: 'hasRole',
         args: [formattedRole, formattedAddress],
       });
-      return Boolean(data);
+      return data as boolean;
     } catch (error) {
       console.error("Failed to check admin status:", error);
       return false;
     }
   }, [publicClient, contract]);
+
+  const addUser = useCallback(async (userAddress: string, isProducerRole: boolean) => {
+    if (!address) return;
+    setIsAddingUser(true);
+    try {
+      const formattedAddress = validateAndFormatAddress(userAddress);
+
+      // Vérifier si l'utilisateur a déjà un rôle
+      const [hasProducerRole, hasConsumerRole, hasAdminRole] = await Promise.all([
+        isProducer(formattedAddress),
+        isConsumer(formattedAddress),
+        isAdmin(formattedAddress)
+      ]);
+
+      if (hasProducerRole || hasConsumerRole || hasAdminRole) {
+        throw new Error(
+          hasAdminRole 
+            ? "Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire." 
+            : "Cette adresse a déjà un rôle attribué (producteur ou consommateur)."
+        );
+      }
+
+      const hash = await writeContractAsync({
+        ...contract,
+        functionName: 'addUser',
+        args: [formattedAddress, isProducerRole],
+      });
+
+      toast({
+        title: "Adding User",
+        description: "Please wait while the user is being added...",
+      });
+
+      // Wait for transaction confirmation
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      toast({
+        title: "User Added",
+        description: `Successfully added user as ${isProducerRole ? 'producer' : 'consumer'}.`,
+      });
+    } catch (error: any) {
+      console.error("Failed to add user:", error);
+      toast({
+        title: "Failed to Add User",
+        description: error.message || "An error occurred while adding the user.",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsAddingUser(false);
+    }
+  }, [address, writeContractAsync, contract, toast, isProducer, isConsumer, isAdmin]);
 
   return (
     <UserManagementContext.Provider
