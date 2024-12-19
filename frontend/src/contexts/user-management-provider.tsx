@@ -56,6 +56,7 @@ export function UserManagementProvider({
         functionName: 'hasRole',
         args: [formattedRole, formattedAddress],
       });
+      console.log('isProducer check result:', data);
       return data as boolean;
     } catch (error) {
       console.error("Failed to check producer status:", error);
@@ -74,6 +75,7 @@ export function UserManagementProvider({
         functionName: 'hasRole',
         args: [formattedRole, formattedAddress],
       });
+      console.log('isConsumer check result:', data);
       return data as boolean;
     } catch (error) {
       console.error("Failed to check consumer status:", error);
@@ -92,6 +94,7 @@ export function UserManagementProvider({
         functionName: 'hasRole',
         args: [formattedRole, formattedAddress],
       });
+      console.log('isAdmin check result:', data);
       return data as boolean;
     } catch (error) {
       console.error("Failed to check admin status:", error);
@@ -99,40 +102,69 @@ export function UserManagementProvider({
     }
   }, [publicClient, contract]);
 
-  const checkUserRoles = useCallback(async (userAddress: string) => {
-    const [hasProducerRole, hasConsumerRole, hasAdminRole] = await Promise.all([
-      isProducer(userAddress),
-      isConsumer(userAddress),
-      isAdmin(userAddress)
-    ]);
-
+  const checkUserRoles = useCallback(async (userAddress: string): Promise<boolean> => {
+    console.log('Checking roles for address:', userAddress);
+    
+    // Vérifier si l'utilisateur est admin
+    const hasAdminRole = await isAdmin(userAddress);
+    console.log('Has admin role:', hasAdminRole);
     if (hasAdminRole) {
-      throw new Error("Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire.");
+      toast({
+        title: "Failed to Add User",
+        description: "Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire.",
+        variant: "destructive",
+      });
+      return true;
     }
+
+    // Vérifier si l'utilisateur a déjà un rôle
+    const [hasProducerRole, hasConsumerRole] = await Promise.all([
+      isProducer(userAddress),
+      isConsumer(userAddress)
+    ]);
+    console.log('Has producer role:', hasProducerRole);
+    console.log('Has consumer role:', hasConsumerRole);
+
     if (hasProducerRole || hasConsumerRole) {
-      throw new Error("Cette adresse a déjà un rôle attribué (producteur ou consommateur).");
+      toast({
+        title: "Failed to Add User",
+        description: "Cette adresse a déjà un rôle attribué (producteur ou consommateur).",
+        variant: "destructive",
+      });
+      return true;
     }
-  }, [isProducer, isConsumer, isAdmin]);
+
+    return false;
+  }, [isAdmin, isProducer, isConsumer, toast]);
 
   const addUser = useCallback(async (userAddress: string, isProducerRole: boolean) => {
     if (!address) return;
-    setIsAddingUser(true);
+    
     try {
+      setIsAddingUser(true);
       const formattedAddress = validateAndFormatAddress(userAddress);
 
-      // Vérifier les rôles avant de tenter l'ajout
-      await checkUserRoles(formattedAddress);
+      // Vérifier les rôles avant de procéder
+      console.log('Starting role checks...');
+      const hasExistingRole = await checkUserRoles(formattedAddress);
+      console.log('Role check result:', hasExistingRole);
 
-      // Si on arrive ici, c'est que l'utilisateur n'a aucun rôle, on peut procéder à l'ajout
-      const hash = await writeContractAsync({
-        ...contract,
-        functionName: 'addUser',
-        args: [formattedAddress, isProducerRole],
-      });
+      if (hasExistingRole) {
+        console.log('User has existing role, stopping execution');
+        setIsAddingUser(false);
+        return;
+      }
 
+      console.log('No existing roles found, proceeding with addition');
       toast({
         title: "Adding User",
         description: "Please wait while the user is being added...",
+      });
+
+      await writeContractAsync({
+        ...contract,
+        functionName: 'addUser',
+        args: [formattedAddress, isProducerRole],
       });
 
       // Wait for transaction confirmation
@@ -146,10 +178,9 @@ export function UserManagementProvider({
       console.error("Failed to add user:", error);
       toast({
         title: "Failed to Add User",
-        description: error.message || "An error occurred while adding the user.",
+        description: "Une erreur est survenue lors de l'ajout de l'utilisateur.",
         variant: "destructive",
       });
-      throw error;
     } finally {
       setIsAddingUser(false);
     }
