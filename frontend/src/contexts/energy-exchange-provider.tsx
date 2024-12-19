@@ -331,7 +331,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
 
   const { writeContractAsync } = useWriteContract();
 
-  const handleAddUser = async (userAddress: string, isProducer: boolean) => {
+  const handleAddUser = async (userAddress: string, isProducerRole: boolean) => {
     if (!writeContractAsync || !isConnected) {
       throw new Error('Please connect your wallet first');
     }
@@ -341,22 +341,57 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const hash = await writeContractAsync({
-        ...userManagementContract,
-        functionName: 'addUser',
-        args: [userAddress as `0x${string}`, isProducer],
-      });
+      // Vérifier les rôles avant d'appeler le smart contract
+      const formattedAddress = userAddress as `0x${string}`;
+      console.log('Checking roles for address:', formattedAddress);
+      
+      const hasAdminRole = await isAdmin(formattedAddress);
+      console.log('Has admin role:', hasAdminRole);
 
+      if (hasAdminRole) {
+        console.log('Blocking addition: address is admin');
+        toast({
+          title: "Failed to Add User",
+          description: "Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire.",
+          variant: "destructive",
+        });
+        return Promise.reject(new Error("Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire."));
+      }
+
+      const [hasProducerRole, hasConsumerRole] = await Promise.all([
+        isProducer(formattedAddress),
+        isConsumer(formattedAddress)
+      ]);
+      console.log('Has producer role:', hasProducerRole);
+      console.log('Has consumer role:', hasConsumerRole);
+
+      if (hasProducerRole || hasConsumerRole) {
+        console.log('Blocking addition: address already has a role');
+        toast({
+          title: "Failed to Add User",
+          description: "Cette adresse a déjà un rôle attribué (producteur ou consommateur).",
+          variant: "destructive",
+        });
+        return Promise.reject(new Error("Cette adresse a déjà un rôle attribué (producteur ou consommateur)."));
+      }
+
+      console.log('No existing roles found, proceeding with addition');
       toast({
         title: "Adding User",
         description: "Please wait while the user is being added...",
+      });
+
+      const hash = await writeContractAsync({
+        ...userManagementContract,
+        functionName: 'addUser',
+        args: [formattedAddress, isProducerRole],
       });
 
       const receipt = await publicClient?.waitForTransactionReceipt({ hash });
 
       toast({
         title: "User Added",
-        description: `Successfully added user as ${isProducer ? 'producer' : 'consumer'}.`,
+        description: `Successfully added user as ${isProducerRole ? 'producer' : 'consumer'}.`,
       });
     } catch (error) {
       console.error('Add user error:', error);
@@ -366,7 +401,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: errorMessage,
         variant: "destructive",
       });
-      throw new Error(errorMessage);
+      throw error;
     }
 };
 
