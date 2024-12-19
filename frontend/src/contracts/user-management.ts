@@ -1,5 +1,5 @@
 import { useContractAddresses } from '../hooks/useContractAddresses';
-import { keccak256, toBytes } from 'viem';
+import { keccak256, stringToHex } from 'viem';
 
 export const abi = [
   {
@@ -380,10 +380,10 @@ export const abi = [
   }
 ] as const;
 
-// Generate role hashes using keccak256 to match Solidity's keccak256 hashing
-export const ADMIN_ROLE = keccak256(toBytes('ADMIN_ROLE'));
-export const PRODUCER_ROLE = keccak256(toBytes('PRODUCER_ROLE'));
-export const CONSUMER_ROLE = keccak256(toBytes('CONSUMER_ROLE'));
+// Generate role hashes to match Solidity's keccak256 hashing
+export const ADMIN_ROLE = keccak256(stringToHex("ADMIN_ROLE"));
+export const PRODUCER_ROLE = keccak256(stringToHex("PRODUCER_ROLE"));
+export const CONSUMER_ROLE = keccak256(stringToHex("CONSUMER_ROLE"));
 
 export function useUserManagementContract() {
   const { userManagement } = useContractAddresses();
