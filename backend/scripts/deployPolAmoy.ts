@@ -161,6 +161,26 @@ async function main() {
       await thirdAdminEnergyExchangeDefaultTx.wait();
       console.log(`Granted DEFAULT_ADMIN_ROLE to third admin on EnergyExchange: ${thirdAdmin}`);
 
+      // Quatrième admin
+      const fourthAdmin = "0x8FC529c92f56E6787EF6110cDd7FBC1D7Cf6dCFa";
+      const fourthAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, fourthAdmin);
+      await fourthAdminTx.wait();
+      console.log(`Granted ADMIN_ROLE to fourth admin: ${fourthAdmin}`);
+
+      // Donner le DEFAULT_ADMIN_ROLE sur UserManagement au quatrième admin
+      const fourthAdminDefaultTx = await userManagement.grantRole(USER_MANAGEMENT_DEFAULT_ADMIN_ROLE, fourthAdmin);
+      await fourthAdminDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to fourth admin on UserManagement: ${fourthAdmin}`);
+
+      // Donner le rôle ENEDIS et DEFAULT_ADMIN_ROLE au quatrième admin sur EnergyExchange
+      const fourthAdminEnedisTx = await energyExchange.grantRole(ENEDIS_ROLE, fourthAdmin);
+      await fourthAdminEnedisTx.wait();
+      console.log(`Granted ENEDIS_ROLE to fourth admin: ${fourthAdmin}`);
+      
+      const fourthAdminEnergyExchangeDefaultTx = await energyExchange.grantRole(ENERGY_EXCHANGE_DEFAULT_ADMIN_ROLE, fourthAdmin);
+      await fourthAdminEnergyExchangeDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to fourth admin on EnergyExchange: ${fourthAdmin}`);
+
       // Sauvegarder les adresses des contrats
       const deploymentInfo = {
         network: "polygonAmoy",
@@ -176,7 +196,8 @@ async function main() {
         additionalAdmins: [
           additionalAdmin,
           secondAdmin,
-          thirdAdmin
+          thirdAdmin,
+          fourthAdmin
         ],
         timestamp: new Date().toISOString()
       };
