@@ -87,35 +87,79 @@ async function main() {
       console.log("Granted MINTER_ROLE to EnergyExchange for EnergyNFT");
 
       // Donner le rôle ADMIN à EnergyExchange pour UserManagement
-      const ADMIN_ROLE = await userManagement.ADMIN_ROLE();
-      const adminTx = await userManagement.grantRole(ADMIN_ROLE, energyExchangeAddress);
+      const USER_MANAGEMENT_ADMIN_ROLE = await userManagement.ADMIN_ROLE();
+      const adminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, energyExchangeAddress);
       await adminTx.wait();
       console.log("Granted ADMIN_ROLE to EnergyExchange for UserManagement");
 
       // Explicitement donner le rôle ADMIN au déployeur pour UserManagement
-      const deployerAdminTx = await userManagement.grantRole(ADMIN_ROLE, deployer.address);
+      const deployerAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, deployer.address);
       await deployerAdminTx.wait();
       console.log("Granted ADMIN_ROLE to deployer for UserManagement");
 
       // Ajouter l'adresse supplémentaire en tant qu'admin
       const additionalAdmin = "0x4d6371994557c161B3133BE641C4Fa013169522d";
-      const additionalAdminTx = await userManagement.grantRole(ADMIN_ROLE, additionalAdmin);
+      const additionalAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, additionalAdmin);
       await additionalAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to additional admin: ${additionalAdmin}`);
 
+      // Donner le DEFAULT_ADMIN_ROLE sur UserManagement à l'admin supplémentaire
+      const USER_MANAGEMENT_DEFAULT_ADMIN_ROLE = await userManagement.DEFAULT_ADMIN_ROLE();
+      const additionalAdminDefaultTx = await userManagement.grantRole(USER_MANAGEMENT_DEFAULT_ADMIN_ROLE, additionalAdmin);
+      await additionalAdminDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to additional admin on UserManagement: ${additionalAdmin}`);
+
+      // Donner le rôle ENEDIS et DEFAULT_ADMIN_ROLE à l'admin supplémentaire sur EnergyExchange
+      const ENEDIS_ROLE = await energyExchange.ENEDIS_ROLE();
+      const ENERGY_EXCHANGE_DEFAULT_ADMIN_ROLE = await energyExchange.DEFAULT_ADMIN_ROLE();
+      
+      const additionalAdminEnedisTx = await energyExchange.grantRole(ENEDIS_ROLE, additionalAdmin);
+      await additionalAdminEnedisTx.wait();
+      console.log(`Granted ENEDIS_ROLE to additional admin: ${additionalAdmin}`);
+      
+      const additionalAdminEnergyExchangeDefaultTx = await energyExchange.grantRole(ENERGY_EXCHANGE_DEFAULT_ADMIN_ROLE, additionalAdmin);
+      await additionalAdminEnergyExchangeDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to additional admin on EnergyExchange: ${additionalAdmin}`);
 
       // Deuxième admin
       const secondAdmin = "0x8606684bD504EFBcb23B55C2729d77D328Fb62ad";
-      const secondAdminTx = await userManagement.grantRole(ADMIN_ROLE, secondAdmin);
+      const secondAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, secondAdmin);
       await secondAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to second admin: ${secondAdmin}`);
 
+      // Donner le DEFAULT_ADMIN_ROLE sur UserManagement au deuxième admin
+      const secondAdminDefaultTx = await userManagement.grantRole(USER_MANAGEMENT_DEFAULT_ADMIN_ROLE, secondAdmin);
+      await secondAdminDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to second admin on UserManagement: ${secondAdmin}`);
+
+      // Donner le rôle ENEDIS et DEFAULT_ADMIN_ROLE au deuxième admin sur EnergyExchange
+      const secondAdminEnedisTx = await energyExchange.grantRole(ENEDIS_ROLE, secondAdmin);
+      await secondAdminEnedisTx.wait();
+      console.log(`Granted ENEDIS_ROLE to second admin: ${secondAdmin}`);
+      
+      const secondAdminEnergyExchangeDefaultTx = await energyExchange.grantRole(ENERGY_EXCHANGE_DEFAULT_ADMIN_ROLE, secondAdmin);
+      await secondAdminEnergyExchangeDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to second admin on EnergyExchange: ${secondAdmin}`);
 
       // Troisième admin
       const thirdAdmin = "0x3F52a5dde225089750378E41aa2e7c635D95bDAB";
-      const thirdAdminTx = await userManagement.grantRole(ADMIN_ROLE, thirdAdmin);
+      const thirdAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, thirdAdmin);
       await thirdAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to third admin: ${thirdAdmin}`);
+
+      // Donner le DEFAULT_ADMIN_ROLE sur UserManagement au troisième admin
+      const thirdAdminDefaultTx = await userManagement.grantRole(USER_MANAGEMENT_DEFAULT_ADMIN_ROLE, thirdAdmin);
+      await thirdAdminDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to third admin on UserManagement: ${thirdAdmin}`);
+
+      // Donner le rôle ENEDIS et DEFAULT_ADMIN_ROLE au troisième admin sur EnergyExchange
+      const thirdAdminEnedisTx = await energyExchange.grantRole(ENEDIS_ROLE, thirdAdmin);
+      await thirdAdminEnedisTx.wait();
+      console.log(`Granted ENEDIS_ROLE to third admin: ${thirdAdmin}`);
+      
+      const thirdAdminEnergyExchangeDefaultTx = await energyExchange.grantRole(ENERGY_EXCHANGE_DEFAULT_ADMIN_ROLE, thirdAdmin);
+      await thirdAdminEnergyExchangeDefaultTx.wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to third admin on EnergyExchange: ${thirdAdmin}`);
 
       // Sauvegarder les adresses des contrats
       const deploymentInfo = {
