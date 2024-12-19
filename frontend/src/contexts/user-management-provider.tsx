@@ -99,27 +99,31 @@ export function UserManagementProvider({
     }
   }, [publicClient, contract]);
 
+  const checkUserRoles = useCallback(async (userAddress: string) => {
+    const [hasProducerRole, hasConsumerRole, hasAdminRole] = await Promise.all([
+      isProducer(userAddress),
+      isConsumer(userAddress),
+      isAdmin(userAddress)
+    ]);
+
+    if (hasAdminRole) {
+      throw new Error("Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire.");
+    }
+    if (hasProducerRole || hasConsumerRole) {
+      throw new Error("Cette adresse a déjà un rôle attribué (producteur ou consommateur).");
+    }
+  }, [isProducer, isConsumer, isAdmin]);
+
   const addUser = useCallback(async (userAddress: string, isProducerRole: boolean) => {
     if (!address) return;
     setIsAddingUser(true);
     try {
       const formattedAddress = validateAndFormatAddress(userAddress);
 
-      // Vérifier si l'utilisateur a déjà un rôle
-      const [hasProducerRole, hasConsumerRole, hasAdminRole] = await Promise.all([
-        isProducer(formattedAddress),
-        isConsumer(formattedAddress),
-        isAdmin(formattedAddress)
-      ]);
+      // Vérifier les rôles avant de tenter l'ajout
+      await checkUserRoles(formattedAddress);
 
-      if (hasProducerRole || hasConsumerRole || hasAdminRole) {
-        throw new Error(
-          hasAdminRole 
-            ? "Cette adresse est un administrateur et ne peut pas avoir de rôle supplémentaire." 
-            : "Cette adresse a déjà un rôle attribué (producteur ou consommateur)."
-        );
-      }
-
+      // Si on arrive ici, c'est que l'utilisateur n'a aucun rôle, on peut procéder à l'ajout
       const hash = await writeContractAsync({
         ...contract,
         functionName: 'addUser',
@@ -149,7 +153,7 @@ export function UserManagementProvider({
     } finally {
       setIsAddingUser(false);
     }
-  }, [address, writeContractAsync, contract, toast, isProducer, isConsumer, isAdmin]);
+  }, [address, writeContractAsync, contract, toast, checkUserRoles]);
 
   return (
     <UserManagementContext.Provider
