@@ -109,14 +109,13 @@ async function main() {
       const secondAdminTx = await userManagement.grantRole(ADMIN_ROLE, secondAdmin);
       await secondAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to second admin: ${secondAdmin}`);
-      
-      /*
+
+
       // Troisième admin
-      const thirdAdmin = "0x0000000000000000000000000000000000000000";
+      const thirdAdmin = "0x3F52a5dde225089750378E41aa2e7c635D95bDAB";
       const thirdAdminTx = await userManagement.grantRole(ADMIN_ROLE, thirdAdmin);
       await thirdAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to third admin: ${thirdAdmin}`);
-      */
 
       // Sauvegarder les adresses des contrats
       const deploymentInfo = {
@@ -133,9 +132,7 @@ async function main() {
         additionalAdmins: [
           additionalAdmin,
           secondAdmin,
-                    /*
           thirdAdmin
-          */
         ],
         timestamp: new Date().toISOString()
       };
