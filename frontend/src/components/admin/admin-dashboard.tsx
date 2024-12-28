@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
 import { useToast } from "../../components/ui/use-toast";
 import { formatEther } from "viem";
+import { VotingManagement } from "./voting-management";
 
 export function AdminDashboard() {
   const { address, isConnected } = useAccount();
@@ -12,25 +13,6 @@ export function AdminDashboard() {
   const [newUserAddress, setNewUserAddress] = useState("");
   const [isProducer, setIsProducer] = useState(false);
   const { toast } = useToast();
-
-  // Debug effect to log offers state changes
-  useEffect(() => {
-    if (offers.length > 0) {
-      // Log all offers with buyers
-      const offersWithBuyers = offers.filter(
-        offer => offer.buyer !== '0x0000000000000000000000000000000000000000'
-      );
-      
-      console.log('Offers with buyers:', offersWithBuyers.map(offer => ({
-        id: offer.id.toString(),
-        buyer: offer.buyer,
-        isPendingCreation: offer.isPendingCreation,
-        isActive: offer.isActive,
-        isCompleted: offer.isCompleted,
-        isValidated: offer.isValidated
-      })));
-    }
-  }, [offers]);
 
   // Early return if not connected
   if (!isConnected || !address) {
@@ -138,11 +120,6 @@ export function AdminDashboard() {
 
   // Filter offers with buyers that need transfer validation
   const pendingTransfers = offers.filter((offer) => {
-    // An offer should be in pending transfers if:
-    // 1. It has a buyer
-    // 2. It's not completed
-    // 3. It's not validated
-    // Note: We removed the isActive check since it might prevent some valid transfers from showing
     return (
       offer.buyer !== '0x0000000000000000000000000000000000000000' &&
       !offer.isCompleted &&
@@ -155,32 +132,8 @@ export function AdminDashboard() {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold mb-8">Admin Dashboard (ENEDIS)</h1>
 
-        {/* Debug Info Section */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-8">
-            <h2 className="text-2xl font-bold mb-4 text-white">Debug Information</h2>
-            <div className="text-white space-y-2">
-              <p>Total Offers: {offers.length}</p>
-              <p>Offers with Buyers: {offers.filter(o => o.buyer !== '0x0000000000000000000000000000000000000000').length}</p>
-              <p>Pending Creations: {pendingOfferCreations.length}</p>
-              <p>Pending Transfers: {pendingTransfers.length}</p>
-              <div className="mt-4">
-                <p className="font-semibold">Offers with Buyers Status:</p>
-                <ul className="list-disc list-inside pl-4">
-                  {offers
-                    .filter(o => o.buyer !== '0x0000000000000000000000000000000000000000')
-                    .map(o => (
-                      <li key={o.id.toString()}>
-                        ID {o.id.toString()}: 
-                        {!o.isActive ? ' Not Active,' : ' Active,'}
-                        {!o.isValidated ? ' Not Validated' : ' Validated'}
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Voting Management Section */}
+        <VotingManagement />
 
         {/* Pending Offer Creations Section */}
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
@@ -304,12 +257,14 @@ export function AdminDashboard() {
         <div className="bg-gray-800 rounded-lg p-6">
           <h2 className="text-2xl font-bold mb-4 text-white">Instructions</h2>
           <ul className="list-disc list-inside space-y-2 text-white">
-            <li>Review pending offer creations in the top section</li>
+            <li>Manage the voting process for MATIC distribution in the top section</li>
+            <li>Start and end voting sessions when appropriate</li>
+            <li>Review pending offer creations</li>
             <li>Validate or reject new energy offers from producers</li>
-            <li>Review pending energy transfers in the middle section</li>
+            <li>Review pending energy transfers</li>
             <li>Validate transfers after confirming energy delivery on the grid</li>
             <li>Reject transfers if energy delivery cannot be confirmed</li>
-            <li>Use the user management section below to add new users to the system</li>
+            <li>Use the user management section to add new users to the system</li>
             <li>The address must be a valid Ethereum address (0x followed by 40 hexadecimal characters)</li>
             <li>You must have admin privileges to manage users and validate transfers</li>
           </ul>

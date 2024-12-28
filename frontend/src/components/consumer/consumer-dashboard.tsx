@@ -4,6 +4,7 @@ import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
 import { formatEther, formatUnits, parseEther } from "viem";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
+import { VotingComponent } from "../shared/voting-component";
 
 export function ConsumerDashboard() {
   const { address } = useAccount();
@@ -104,6 +105,11 @@ export function ConsumerDashboard() {
               <p className="text-white text-xl font-semibold">{formattedJoulBalance} JOUL</p>
             </div>
           </div>
+        </div>
+
+        {/* Voting Section */}
+        <div className="mb-8">
+          <VotingComponent />
         </div>
 
         {/* Available Offers Section */}

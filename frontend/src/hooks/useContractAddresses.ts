@@ -14,5 +14,6 @@ export function useContractAddresses() {
     energyNFT: addresses.ENERGY_NFT as `0x${string}`,
     userManagement: addresses.USER_MANAGEMENT as `0x${string}`,
     energyExchange: addresses.ENERGY_EXCHANGE as `0x${string}`,
+    joulVoting: addresses.JOUL_VOTING as `0x${string}`,
   }
 }

@@ -5,6 +5,7 @@ import { useAccount, useBalance, useContractRead } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
 import { formatEther, formatUnits } from "viem";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
+import { VotingComponent } from "../shared/voting-component";
 
 export function ProducerDashboard() {
   const { address } = useAccount();
@@ -111,6 +112,11 @@ export function ProducerDashboard() {
               <p className="text-white text-xl font-semibold">{nftBalance?.toString() || "0"} NFTs</p>
             </div>
           </div>
+        </div>
+
+        {/* Voting Section */}
+        <div className="mb-8">
+          <VotingComponent />
         </div>
 
         {/* NFT Badges Section */}
