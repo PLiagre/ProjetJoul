@@ -233,7 +233,7 @@ contract JoulGovernance is AccessControl, Pausable {
         uint256 totalVotes = proposal.forVotes + proposal.againstVotes;
         uint256 totalSupply = joulToken.totalSupply();
         
-        return (totalVotes * 100) >= (totalSupply * QUORUM_PERCENTAGE) / 100;
+        return totalVotes >= (totalSupply * QUORUM_PERCENTAGE) / 100;
     }
 
     /**

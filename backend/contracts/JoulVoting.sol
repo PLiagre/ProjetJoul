@@ -99,8 +99,12 @@ contract JoulVoting is Ownable {
         require(_id < 3, "Invalid proposal ID");
         require(joulToken.balanceOf(msg.sender) >= 1 ether, "Insufficient JOUL tokens");
 
-        // Burn 1 JOUL token
-        joulToken.safeTransferFrom(msg.sender, address(0xdead), 1 ether);
+        // Burn 1 JOUL token by sending to dead address
+        joulToken.safeTransferFrom(
+            msg.sender, 
+            address(0x000000000000000000000000000000000000dEaD),
+            1 ether
+        );
 
         voters[msg.sender].hasVoted = true;
         voters[msg.sender].votedProposalId = _id;

@@ -20,7 +20,7 @@ const config: HardhatUserConfig = {
   networks: {
     localhost: {
       url: "http://127.0.0.1:8545/",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [HARDHAT_DEFAULT_PRIVATE_KEY],
+      accounts: [HARDHAT_DEFAULT_PRIVATE_KEY, process.env.PRIVATE_KEY as string],
     },
     polygonAmoy: {
       url: "https://rpc-amoy.polygon.technology",

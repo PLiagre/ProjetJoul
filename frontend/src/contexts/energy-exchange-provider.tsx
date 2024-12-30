@@ -7,7 +7,6 @@ import { useUserManagementContext } from './user-management-provider';
 import { useUserManagementContract } from '../contracts/user-management';
 import { getContractAddresses } from '../lib/wagmi-config';
 
-
 interface EnergyOffer {
   id: bigint;
   producer: `0x${string}`;
@@ -37,7 +36,8 @@ interface EnergyExchangeContextType {
   addUser: (address: string, isProducer: boolean) => Promise<void>;
   removeUser: (address: string) => Promise<void>;
   createOffer: (quantity: number, pricePerUnit: number, energyType: string) => Promise<void>;
-  purchaseOffer: (offerId: bigint, totalPrice: bigint) => Promise<void>;
+  commitToPurchase: (commitment: `0x${string}`) => Promise<void>;
+  purchaseOffer: (offerId: bigint, totalPrice: bigint, secret: `0x${string}`) => Promise<void>;
   validateDelivery: (offerId: bigint, isValid: boolean) => Promise<void>;
   validateOfferCreation: (offerId: bigint, isValid: boolean) => Promise<void>;
   cancelExpiredOffer: (offerId: bigint) => Promise<void>;
@@ -74,6 +74,9 @@ function parseContractError(error: any): string {
 
   if (errorMessage.includes('execution reverted')) {
     const revertReason = errorData.replace('Reverted ', '');
+    if (revertReason.includes('Invalid commitment')) {
+      return 'Invalid commitment. Please ensure you have committed to the purchase first.';
+    }
     if (revertReason.includes('Validation deadline not exceeded')) {
       return 'Cannot cancel offer yet - validation period has not expired.';
     }
@@ -172,7 +175,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       let consecutiveErrors = 0;
       let index = 0;
       
-      // Continue fetching until we hit 3 consecutive batches with all errors
       while (consecutiveErrors < 3 && index < 1000) {
         const promises = Array.from({ length: batchSize }, (_, i) => {
           return publicClient.readContract({
@@ -197,7 +199,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         for (const result of results) {
           if (result.success && result.data) {
             const offer = convertToOffer(result.data, BigInt(result.index));
-            // Include all offers that have a valid producer address
             if (offer.producer !== '0x0000000000000000000000000000000000000000') {
               fetchedOffers.push(offer);
               validOffersInBatch++;
@@ -208,7 +209,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         if (validOffersInBatch === 0) {
           consecutiveErrors++;
         } else {
-          consecutiveErrors = 0;  // Reset if we found valid offers
+          consecutiveErrors = 0;
         }
 
         index += batchSize;
@@ -216,7 +217,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
 
       console.log(`Fetched ${fetchedOffers.length} valid offers`);
       
-      // Sort offers by ID in descending order (newest first)
       fetchedOffers.sort((a, b) => Number(b.id - a.id));
       setOffers(fetchedOffers);
     } catch (error) {
@@ -224,28 +224,25 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   }, [publicClient, isConnected, contractAddress]);
 
-  // Remove debounce for direct fetchOffers calls
   const debouncedFetchOffers = useCallback(
     debounce(() => {
       fetchOffers();
-    }, 500), // Reduced debounce time
+    }, 500),
     [fetchOffers]
   );
 
-  // Separate effect for initial load and wallet connection
   useEffect(() => {
     if (isConnected && publicClient) {
       fetchOffers();
     }
   }, [isConnected, publicClient, fetchOffers]);
 
-  // Separate effect for event watching
   useEffect(() => {
     if (!publicClient) return;
   
     const handleOfferPurchased = async (log: any) => {
       console.log('OfferPurchased event received:', log);
-      await fetchOffers(); // Immediate fetch for purchase events
+      await fetchOffers();
     };
   
     const handleOtherEvents = debounce(() => {
@@ -275,6 +272,12 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         address: contractAddress,
         abi,
         eventName: 'OfferCreationValidated',
+        onLogs: handleOtherEvents,
+      }),
+      publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'CommitmentSubmitted',
         onLogs: handleOtherEvents,
       })
     ];
@@ -341,7 +344,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // Vérifier les rôles avant d'appeler le smart contract
       const formattedAddress = userAddress as `0x${string}`;
       console.log('Checking roles for address:', formattedAddress);
       
@@ -403,7 +405,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       });
       throw error;
     }
-};
+  };
 
   const handleRemoveUser = async (userAddress: string) => {
     if (!writeContractAsync || !isConnected) {
@@ -418,20 +420,20 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       });
 
       toast({
-        title: "Removing User",
-        description: "Please wait while the user is being removed...",
+        title: "Initiating User Removal",
+        description: "Please wait while the removal process is being initiated...",
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
 
       toast({
-        title: "User Removed",
-        description: "Successfully removed user.",
+        title: "Removal Process Initiated",
+        description: "The user removal process has been initiated. The removal will be effective after a 24-hour grace period.",
       });
     } catch (error) {
       console.error('Remove user error:', error);
       toast({
-        title: "Failed to Remove User",
+        title: "Failed to Initiate User Removal",
         description: parseContractError(error),
         variant: "destructive",
       });
@@ -467,12 +469,89 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: "Your energy offer has been created and is pending Enedis validation.",
       });
 
-      // Immediately fetch offers after creating a new one
       await fetchOffers();
     } catch (error) {
       console.error('Create offer error:', error);
       toast({
         title: "Failed to Create Offer",
+        description: parseContractError(error),
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleCommitToPurchase = async (commitment: `0x${string}`) => {
+    if (!writeContractAsync || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+    try {
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'commitToPurchase',
+        args: [commitment],
+      });
+
+      toast({
+        title: "Submitting Commitment",
+        description: "Please wait while your purchase commitment is being submitted...",
+      });
+
+      await publicClient?.waitForTransactionReceipt({ hash });
+
+      toast({
+        title: "Commitment Submitted",
+        description: "Your purchase commitment has been submitted successfully.",
+      });
+    } catch (error) {
+      console.error('Commit to purchase error:', error);
+      toast({
+        title: "Commitment Failed",
+        description: parseContractError(error),
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handlePurchaseOffer = async (offerId: bigint, totalPrice: bigint, secret: `0x${string}`) => {
+    if (!writeContractAsync || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+    try {
+      console.log('Purchasing offer:', {
+        offerId: offerId.toString(),
+        totalPrice: totalPrice.toString(),
+        secret
+      });
+  
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'purchaseOffer',
+        args: [offerId, secret],
+        value: totalPrice,
+      });
+  
+      toast({
+        title: "Processing Purchase",
+        description: "Please wait while your purchase is being processed...",
+      });
+  
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      console.log('Purchase transaction receipt:', receipt);
+  
+      toast({
+        title: "Purchase Successful",
+        description: "Your energy purchase has been completed.",
+      });
+  
+      await fetchOffers();
+    } catch (error) {
+      console.error('Purchase error:', error);
+      toast({
+        title: "Purchase Failed",
         description: parseContractError(error),
         variant: "destructive",
       });
@@ -492,11 +571,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         connectedAddress: address
       });
 
-      // Get the current gas price and add a buffer
       const gasPrice = await publicClient.getGasPrice();
-      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10); // Add 20% buffer
+      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
 
-      // Estimate gas with a buffer
       const gasEstimate = await publicClient.estimateContractGas({
         address: contractAddress,
         abi,
@@ -504,7 +581,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         args: [offerId, isValid],
         account: address,
       });
-      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10); // Add 50% buffer
+      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10);
 
       console.log('Transaction parameters:', {
         gasPrice: bufferedGasPrice.toString(),
@@ -525,10 +602,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: "Please wait while the offer creation is being validated...",
       });
 
-      // Wait for more confirmations on Polygon Amoy
       const receipt = await publicClient.waitForTransactionReceipt({ 
         hash,
-        confirmations: 3 // Wait for 3 confirmations
+        confirmations: 3
       });
 
       console.log('Transaction receipt:', receipt);
@@ -543,49 +619,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       console.error('Offer creation validation error:', error);
       toast({
         title: "Validation Failed",
-        description: parseContractError(error),
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const handlePurchaseOffer = async (offerId: bigint, totalPrice: bigint) => {
-    if (!writeContractAsync || !isConnected) {
-      throw new Error('Please connect your wallet first');
-    }
-    try {
-      console.log('Purchasing offer:', {  // Add this
-        offerId: offerId.toString(),
-        totalPrice: totalPrice.toString()
-      });
-  
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi,
-        functionName: 'purchaseOffer',
-        args: [offerId],
-        value: totalPrice,
-      });
-  
-      toast({
-        title: "Processing Purchase",
-        description: "Please wait while your purchase is being processed...",
-      });
-  
-      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
-      console.log('Purchase transaction receipt:', receipt);  // Add this
-  
-      toast({
-        title: "Purchase Successful",
-        description: "Your energy purchase has been completed.",
-      });
-  
-      await fetchOffers();
-    } catch (error) {
-      console.error('Purchase error:', error);
-      toast({
-        title: "Purchase Failed",
         description: parseContractError(error),
         variant: "destructive",
       });
@@ -671,6 +704,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     addUser: handleAddUser,
     removeUser: handleRemoveUser,
     createOffer: handleCreateOffer,
+    commitToPurchase: handleCommitToPurchase,
     purchaseOffer: handlePurchaseOffer,
     validateDelivery: handleValidateDelivery,
     validateOfferCreation: handleValidateOfferCreation,

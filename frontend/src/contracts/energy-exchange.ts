@@ -1,6 +1,25 @@
 import { getContractAddresses } from '../lib/wagmi-config'
 
+// Fee distribution constants (base 1000)
+export const PRODUCER_SHARE = 750;  // 75%
+export const ENEDIS_SHARE = 200;   // 20%
+export const PLATFORM_SHARE = 30;   // 3%
+export const POOL_SHARE = 20;      // 2%
+
 export const abi = [
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "commitment",
+        "type": "bytes32"
+      }
+    ],
+    "name": "commitToPurchase",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
   {
     "inputs": [
       {
@@ -36,6 +55,11 @@ export const abi = [
         "internalType": "uint256",
         "name": "offerId",
         "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "secret",
+        "type": "bytes32"
       }
     ],
     "name": "purchaseOffer",
@@ -304,6 +328,81 @@ export const abi = [
       }
     ],
     "name": "UserAdded",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "commitments",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "commitment",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CommitmentSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "producerAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "enedisAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "platformAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "poolAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "FeesDistributed",
     "type": "event"
   },
   {

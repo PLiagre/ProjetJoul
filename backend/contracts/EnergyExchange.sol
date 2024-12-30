@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "./JoulToken.sol";
 import "./EnergyNFT.sol";
 import "./UserManagement.sol";
@@ -17,6 +18,7 @@ import "./UserManagement.sol";
  * - Système de validation avec limite de 24h
  */
 contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
+    using Address for address payable;
     bytes32 public constant ENEDIS_ROLE = keccak256("ENEDIS_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -30,8 +32,13 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     uint256 public constant PLATFORM_SHARE = 30;   // 3%
     uint256 public constant POOL_SHARE = 20;      // 2%
 
-// Constante pour 1 JOUL avec 18 décimales (1 * 10^18)
-uint256 private constant ONE_JOUL = 1000000000000000000;
+    // Constante pour 1 JOUL avec 18 décimales (1 * 10^18)
+    uint256 private constant ONE_JOUL = 1000000000000000000;
+
+    // Limites de sécurité
+    uint256 public constant MAX_QUANTITY = 1000000000; // 1 GWh
+    uint256 public constant MAX_PRICE_PER_UNIT = 1000000000000000000; // 1 MATIC
+    uint256 public constant MAX_ENERGY_TYPE_LENGTH = 32;
 
     struct EnergyOffer {
         address producer;
@@ -43,16 +50,18 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         address buyer;
         bool isValidated;
         bool isCompleted;
-        bool isPendingCreation; // New field for creation validation
+        bool isPendingCreation;
     }
 
     mapping(uint256 => EnergyOffer) public offers;
     mapping(uint256 => uint256) public offerLocks; // offerId => timestamp
+    mapping(address => bytes32) public commitments; // Protection contre le front-running
     uint256 private _nextOfferId;
 
     address public immutable enedisAddress;
     address public immutable poolAddress;
     uint256 public constant VALIDATION_DEADLINE = 24 hours;
+    uint256 public constant VALIDATION_MARGIN = 5 minutes;
 
     event OfferCreated(
         uint256 indexed offerId,
@@ -95,6 +104,11 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         address indexed user
     );
 
+    event CommitmentSubmitted(
+        address indexed user,
+        bytes32 commitment
+    );
+
     constructor(
         address _joulToken,
         address _energyNFT,
@@ -119,40 +133,44 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         _grantRole(PAUSER_ROLE, msg.sender);
     }
 
-    /**
-     * @dev Ajoute un nouvel utilisateur
-     */
     function addUser(address user, bool isProducer) 
         external 
         onlyRole(DEFAULT_ADMIN_ROLE)
         whenNotPaused 
     {
+        require(user != address(0), "Invalid user address");
         userManagement.addUser(user, isProducer);
         emit UserAdded(user, isProducer);
     }
 
-    /**
-     * @dev Supprime un utilisateur
-     */
     function removeUser(address user) 
         external 
         onlyRole(DEFAULT_ADMIN_ROLE)
         whenNotPaused 
     {
-        userManagement.removeUser(user);
+        require(user != address(0), "Invalid user address");
+        userManagement.initiateUserRemoval(user);
         emit UserRemoved(user);
     }
 
-    /**
-     * @dev Crée une nouvelle offre d'énergie (en attente de validation)
-     */
+    function commitToPurchase(bytes32 commitment) 
+        external 
+        whenNotPaused 
+    {
+        require(userManagement.isConsumer(msg.sender), "Not a consumer");
+        require(commitment != bytes32(0), "Invalid commitment");
+        commitments[msg.sender] = commitment;
+        emit CommitmentSubmitted(msg.sender, commitment);
+    }
+
     function createOffer(
         uint256 quantity,
         uint256 pricePerUnit,
         string memory energyType
     ) external whenNotPaused returns (uint256) {
-        require(quantity > 0, "Quantity must be positive");
-        require(pricePerUnit > 0, "Price must be positive");
+        require(quantity > 0 && quantity <= MAX_QUANTITY, "Invalid quantity");
+        require(pricePerUnit > 0 && pricePerUnit <= MAX_PRICE_PER_UNIT, "Invalid price");
+        require(bytes(energyType).length <= MAX_ENERGY_TYPE_LENGTH, "Energy type too long");
         require(userManagement.isProducer(msg.sender), "Not a producer");
 
         uint256 offerId = _nextOfferId++;
@@ -163,11 +181,11 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
             pricePerUnit: pricePerUnit,
             energyType: energyType,
             timestamp: block.timestamp,
-            isActive: false, // Initially not active until validated
+            isActive: false,
             buyer: address(0),
             isValidated: false,
             isCompleted: false,
-            isPendingCreation: true // New offer pending validation
+            isPendingCreation: true
         });
 
         emit OfferCreated(
@@ -181,9 +199,6 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         return offerId;
     }
 
-    /**
-     * @dev Validation de la création d'offre par ENEDIS
-     */
     function validateOfferCreation(uint256 offerId, bool isValid) 
         external 
         onlyRole(ENEDIS_ROLE) 
@@ -197,23 +212,21 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         
         if (isValid) {
             offer.isActive = true;
-            // Mint JOUL tokens using the contract's PRODUCTION_REWARD_RATE
             joulToken.mintProductionReward(offer.producer, offer.quantity);
         }
 
         emit OfferCreationValidated(offerId, isValid);
     }
 
-    /**
-     * @dev Achète une offre d'énergie
-     */
-    function purchaseOffer(uint256 offerId) 
+    function purchaseOffer(uint256 offerId, bytes32 secret) 
         external 
         payable 
         whenNotPaused 
         nonReentrant 
     {
         require(userManagement.isConsumer(msg.sender), "Not a consumer");
+        require(keccak256(abi.encodePacked(secret)) == commitments[msg.sender], "Invalid commitment");
+        delete commitments[msg.sender];
         
         EnergyOffer storage offer = offers[offerId];
         require(offer.isActive, "Offer is not active");
@@ -231,10 +244,6 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         emit OfferPurchased(offerId, msg.sender, totalPrice);
     }
 
-    /**
-     * @dev Validation ENEDIS et distribution des fonds
-     * L'offre doit être validée dans les 24h suivant l'achat
-     */
     function validateAndDistribute(uint256 offerId, bool isValid) 
         external 
         onlyRole(ENEDIS_ROLE) 
@@ -245,7 +254,7 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer != address(0), "Offer not purchased");
         require(
-            block.timestamp <= offerLocks[offerId] + VALIDATION_DEADLINE,
+            block.timestamp + VALIDATION_MARGIN <= offerLocks[offerId] + VALIDATION_DEADLINE,
             "Validation deadline exceeded"
         );
 
@@ -257,16 +266,11 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         if (isValid) {
             _distributeFeesAndRewards(offerId);
         } else {
-            // Remboursement de l'acheteur en cas d'échec
             uint256 totalPrice = offer.quantity * offer.pricePerUnit;
-            (bool success,) = payable(offer.buyer).call{value: totalPrice}("");
-            require(success, "Refund failed");
+            payable(offer.buyer).sendValue(totalPrice);
         }
     }
 
-    /**
-     * @dev Annule une offre si elle n'a pas été validée dans les 24h
-     */
     function cancelExpiredOffer(uint256 offerId)
         external
         whenNotPaused
@@ -283,43 +287,33 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         offer.isCompleted = true;
         offer.isValidated = false;
 
-        // Remboursement automatique de l'acheteur
         uint256 totalPrice = offer.quantity * offer.pricePerUnit;
-        (bool success,) = payable(offer.buyer).call{value: totalPrice}("");
-        require(success, "Refund failed");
+        payable(offer.buyer).sendValue(totalPrice);
 
         emit OfferValidated(offerId, false);
     }
 
-    /**
-     * @dev Distribution interne des frais et récompenses
-     */
     function _distributeFeesAndRewards(uint256 offerId) private {
         EnergyOffer storage offer = offers[offerId];
         uint256 totalAmount = offer.quantity * offer.pricePerUnit;
         
-        // Calcul des parts
         uint256 producerAmount = (totalAmount * PRODUCER_SHARE) / 1000;
         uint256 enedisAmount = (totalAmount * ENEDIS_SHARE) / 1000;
         uint256 platformAmount = (totalAmount * PLATFORM_SHARE) / 1000;
         uint256 poolAmount = (totalAmount * POOL_SHARE) / 1000;
 
-        // Transferts MATIC
-        (bool producerSuccess,) = payable(offer.producer).call{value: producerAmount}("");
-        require(producerSuccess, "Producer transfer failed");
+        require(
+            producerAmount + enedisAmount + platformAmount + poolAmount == totalAmount,
+            "Distribution amount mismatch"
+        );
 
-        (bool enedisSuccess,) = payable(enedisAddress).call{value: enedisAmount}("");
-        require(enedisSuccess, "ENEDIS transfer failed");
+        payable(offer.producer).sendValue(producerAmount);
+        payable(enedisAddress).sendValue(enedisAmount);
+        payable(poolAddress).sendValue(poolAmount);
 
-        (bool poolSuccess,) = payable(poolAddress).call{value: poolAmount}("");
-        require(poolSuccess, "Pool transfer failed");
-
-        // Mint 0.5 JOUL each to producer and consumer
-        // Since JoulToken applies its own rates (0.5%), we need to pass 100 JOUL to get 0.5 JOUL
         joulToken.mintSaleReward(offer.producer, ONE_JOUL * 100);
         joulToken.mintPurchaseReward(offer.buyer, ONE_JOUL * 100);
 
-        // Mint du NFT pour l'acheteur
         string memory uri = _generateTokenURI(offerId);
         energyNFT.mintCertificate(
             offer.buyer,
@@ -337,22 +331,14 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         );
     }
 
-    /**
-     * @dev Génère l'URI des métadonnées pour le NFT
-     * Note: Dans une version production, ceci devrait être lié à IPFS
-     */
     function _generateTokenURI(uint256 offerId) 
         private 
         pure 
         returns (string memory) 
     {
-        // Placeholder - à implémenter avec IPFS
         return string(abi.encodePacked("ipfs://", uint2str(offerId)));
     }
 
-    /**
-     * @dev Convertit un uint en string
-     */
     function uint2str(uint256 _i) 
         private 
         pure 
@@ -377,23 +363,14 @@ uint256 private constant ONE_JOUL = 1000000000000000000;
         str = string(bstr);
     }
 
-    /**
-     * @dev Pause le contrat
-     */
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    /**
-     * @dev Reprend les opérations
-     */
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
-    /**
-     * @dev Override requis par Solidity
-     */
     function supportsInterface(bytes4 interfaceId)
         public
         view

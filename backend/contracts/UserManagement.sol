@@ -3,20 +3,35 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-
 /**
  * @title UserManagement
  * @dev Gestion des utilisateurs du système Joul
  * - Attribution des rôles (producteur/consommateur)
  * - Contrôle d'accès pour l'admin
+ * - Délai de grâce pour la suppression
+ * - Support des rôles multiples
  */
 contract UserManagement is AccessControl, Pausable {
+
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant PRODUCER_ROLE = keccak256("PRODUCER_ROLE");
     bytes32 public constant CONSUMER_ROLE = keccak256("CONSUMER_ROLE");
 
-    event UserAdded(address indexed userAddress, bool isProducer);
+    uint256 public constant GRACE_PERIOD = 24 hours;
+    mapping(address => uint256) public removalTimestamp;
+
+    event UserAdded(
+        address indexed userAddress, 
+        bool isProducer,
+        bool isConsumer
+    );
+    
     event UserRemoved(address indexed userAddress);
+    event UserRemovalInitiated(
+        address indexed userAddress, 
+        uint256 effectiveTime
+    );
+    event UserRemovalCancelled(address indexed userAddress);
 
     constructor() {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -24,9 +39,9 @@ contract UserManagement is AccessControl, Pausable {
     }
 
     /**
-     * @dev Ajoute un nouvel utilisateur
+     * @dev Ajoute un nouvel utilisateur avec possibilité de rôles multiples
      * @param userAddress Adresse de l'utilisateur
-     * @param _isProducer true pour producteur, false pour consommateur
+     * @param _isProducer true pour ajouter le rôle producteur
      */
     function addUser(address userAddress, bool _isProducer) 
         external 
@@ -35,24 +50,25 @@ contract UserManagement is AccessControl, Pausable {
     {
         require(userAddress != address(0), "Invalid address");
         require(
-            !hasRole(PRODUCER_ROLE, userAddress) && !hasRole(CONSUMER_ROLE, userAddress),
-            "User already registered"
+            removalTimestamp[userAddress] == 0,
+            "User pending removal"
         );
 
+        // Toujours accorder le rôle consommateur
+        _grantRole(CONSUMER_ROLE, userAddress);
+        
         if (_isProducer) {
             _grantRole(PRODUCER_ROLE, userAddress);
-        } else {
-            _grantRole(CONSUMER_ROLE, userAddress);
         }
 
-        emit UserAdded(userAddress, _isProducer);
+        emit UserAdded(userAddress, _isProducer, true);
     }
 
     /**
-     * @dev Supprime un utilisateur
+     * @dev Initie la suppression d'un utilisateur avec délai de grâce
      * @param userAddress Adresse de l'utilisateur
      */
-    function removeUser(address userAddress) 
+    function initiateUserRemoval(address userAddress) 
         external 
         onlyRole(ADMIN_ROLE) 
         whenNotPaused 
@@ -62,13 +78,53 @@ contract UserManagement is AccessControl, Pausable {
             hasRole(PRODUCER_ROLE, userAddress) || hasRole(CONSUMER_ROLE, userAddress),
             "User not registered"
         );
+        require(removalTimestamp[userAddress] == 0, "Removal already initiated");
+
+        uint256 effectiveTime = block.timestamp + GRACE_PERIOD;
+        removalTimestamp[userAddress] = effectiveTime;
+        
+        emit UserRemovalInitiated(userAddress, effectiveTime);
+    }
+
+    /**
+     * @dev Annule une suppression d'utilisateur en cours
+     * @param userAddress Adresse de l'utilisateur
+     */
+    function cancelUserRemoval(address userAddress)
+        external
+        onlyRole(ADMIN_ROLE)
+        whenNotPaused
+    {
+        require(userAddress != address(0), "Invalid address");
+        require(removalTimestamp[userAddress] > 0, "No removal pending");
+
+        delete removalTimestamp[userAddress];
+        
+        emit UserRemovalCancelled(userAddress);
+    }
+
+    /**
+     * @dev Finalise la suppression d'un utilisateur après le délai de grâce
+     * @param userAddress Adresse de l'utilisateur
+     */
+    function finalizeUserRemoval(address userAddress) 
+        external 
+        onlyRole(ADMIN_ROLE) 
+        whenNotPaused 
+    {
+        require(userAddress != address(0), "Invalid address");
+        require(removalTimestamp[userAddress] > 0, "Removal not initiated");
+        require(
+            block.timestamp >= removalTimestamp[userAddress],
+            "Grace period not ended"
+        );
 
         if (hasRole(PRODUCER_ROLE, userAddress)) {
             _revokeRole(PRODUCER_ROLE, userAddress);
         }
-        if (hasRole(CONSUMER_ROLE, userAddress)) {
-            _revokeRole(CONSUMER_ROLE, userAddress);
-        }
+        _revokeRole(CONSUMER_ROLE, userAddress);
+        
+        delete removalTimestamp[userAddress];
 
         emit UserRemoved(userAddress);
     }
@@ -82,7 +138,8 @@ contract UserManagement is AccessControl, Pausable {
         view 
         returns (bool) 
     {
-        return hasRole(PRODUCER_ROLE, userAddress);
+        return hasRole(PRODUCER_ROLE, userAddress) && 
+               removalTimestamp[userAddress] == 0;
     }
 
     /**
@@ -94,7 +151,8 @@ contract UserManagement is AccessControl, Pausable {
         view 
         returns (bool) 
     {
-        return hasRole(CONSUMER_ROLE, userAddress);
+        return hasRole(CONSUMER_ROLE, userAddress) && 
+               removalTimestamp[userAddress] == 0;
     }
 
     /**

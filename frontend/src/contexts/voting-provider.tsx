@@ -1,6 +1,6 @@
 import { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 import { useAccount, usePublicClient, useWalletClient, useChainId } from 'wagmi';
-import { getAddress, abi } from '../contracts/joul-voting';
+import { getAddress, abi, DISTRIBUTION_PROPOSALS, VOTE_COST } from '../contracts/joul-voting';
 import { useToast } from '../components/ui/use-toast';
 import { useUserManagementContext } from './user-management-provider';
 import { Address, PublicClient } from 'viem';
@@ -27,6 +27,9 @@ interface VotingContextType {
   endVotingSession: () => Promise<void>;
   tallyVotes: () => Promise<void>;
   winningDistribution: Distribution | null;
+  getProposalVoteCount: (proposalId: number) => Promise<bigint>;
+  winningProposalId: bigint | null;
+  proposals: typeof DISTRIBUTION_PROPOSALS;
 }
 
 const VotingContext = createContext<VotingContextType | undefined>(undefined);
@@ -61,6 +64,27 @@ export function VotingProvider({ children }: { children: ReactNode }) {
   const [voterInfo, setVoterInfo] = useState<VoterInfo | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<number>(0);
   const [winningDistribution, setWinningDistribution] = useState<Distribution | null>(null);
+  const [winningProposalId, setWinningProposalId] = useState<bigint | null>(null);
+
+  // Fetch winning proposal ID when votes are tallied
+  useEffect(() => {
+    if (!publicClient || !isConnected || workflowStatus !== 3) return;
+
+    const fetchWinningProposalId = async () => {
+      try {
+        const result = await publicClient.readContract({
+          address: contractAddress,
+          abi,
+          functionName: 'winningProposalID',
+        });
+        setWinningProposalId(result as bigint);
+      } catch (error) {
+        console.error('Error fetching winning proposal ID:', error);
+      }
+    };
+
+    fetchWinningProposalId();
+  }, [publicClient, isConnected, workflowStatus, contractAddress]);
 
   // Fetch voter info
   useEffect(() => {
@@ -155,12 +179,77 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const getProposalVoteCount = async (proposalId: number): Promise<bigint> => {
+    if (!publicClient || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+
+    try {
+      const result = await publicClient.readContract({
+        address: contractAddress,
+        abi,
+        functionName: 'getProposalVoteCount',
+        args: [BigInt(proposalId)],
+      });
+      return result as bigint;
+    } catch (error) {
+      console.error('Error getting proposal vote count:', error);
+      throw error;
+    }
+  };
+
   const handleVote = async (proposalId: number) => {
     if (!walletClient || !isConnected || !publicClient || !address) {
       throw new Error('Please connect your wallet first');
     }
 
     try {
+      // Check JOUL token balance and approval
+      const joulTokenAddress = await publicClient.readContract({
+        address: contractAddress,
+        abi,
+        functionName: 'joulToken',
+      }) as Address;
+
+      // Check balance
+      const balance = await publicClient.readContract({
+        address: joulTokenAddress,
+        abi: [{
+          name: 'balanceOf',
+          type: 'function',
+          stateMutability: 'view',
+          inputs: [{ name: 'account', type: 'address' }],
+          outputs: [{ name: '', type: 'uint256' }]
+        }],
+        functionName: 'balanceOf',
+        args: [address],
+      }) as bigint;
+
+      if (balance < VOTE_COST) {
+        throw new Error('Insufficient JOUL tokens. You need 1 JOUL token to vote.');
+      }
+
+      // Approve JOUL token spending
+      const { request: approveRequest } = await publicClient.simulateContract({
+        address: joulTokenAddress,
+        abi: [{
+          name: 'approve',
+          type: 'function',
+          stateMutability: 'nonpayable',
+          inputs: [
+            { name: 'spender', type: 'address' },
+            { name: 'amount', type: 'uint256' }
+          ],
+          outputs: [{ name: '', type: 'bool' }]
+        }],
+        functionName: 'approve',
+        args: [contractAddress, VOTE_COST],
+        account: address,
+      });
+
+      const approveHash = await walletClient.writeContract(approveRequest);
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
       const { request } = await publicClient.simulateContract({
         address: contractAddress,
         abi,
@@ -328,6 +417,9 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     endVotingSession: handleEndVotingSession,
     tallyVotes: handleTallyVotes,
     winningDistribution,
+    getProposalVoteCount,
+    winningProposalId,
+    proposals: DISTRIBUTION_PROPOSALS,
   };
 
   return (

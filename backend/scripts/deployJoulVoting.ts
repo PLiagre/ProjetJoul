@@ -6,12 +6,17 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying JoulVoting contract with account:", deployer.address);
 
-  // Get the JOUL token address from the existing contract addresses
-  const contractAddressesPath = path.join(__dirname, "../../frontend/src/lib/contract-addresses-amoy.json");
+  // Get the JOUL token addresses from both config files
+  const contractAddressesPath = path.join(__dirname, "../../frontend/src/lib/contract-addresses.json");
+  const contractAddressesAmoyPath = path.join(__dirname, "../../frontend/src/lib/contract-addresses-amoy.json");
+  
   const contractAddresses = JSON.parse(fs.readFileSync(contractAddressesPath, "utf8"));
-  const joulTokenAddress = contractAddresses.joulToken;
+  const contractAddressesAmoy = JSON.parse(fs.readFileSync(contractAddressesAmoyPath, "utf8"));
+  
+  const joulTokenAddress = contractAddresses.JOUL_TOKEN;
+  const joulTokenAmoyAddress = contractAddressesAmoy.JOUL_TOKEN;
 
-  if (!joulTokenAddress) {
+  if (!joulTokenAddress || !joulTokenAmoyAddress) {
     throw new Error("JOUL token address not found in contract addresses");
   }
 
@@ -23,10 +28,13 @@ async function main() {
   const joulVotingAddress = await joulVoting.getAddress();
   console.log("JoulVoting deployed to:", joulVotingAddress);
 
-  // Update contract addresses file
-  contractAddresses.joulVoting = joulVotingAddress;
+  // Update both contract addresses files
+  contractAddresses.JOUL_VOTING = joulVotingAddress;
+  contractAddressesAmoy.JOUL_VOTING = joulVotingAddress;
+
   fs.writeFileSync(contractAddressesPath, JSON.stringify(contractAddresses, null, 2));
-  console.log("Contract addresses updated");
+  fs.writeFileSync(contractAddressesAmoyPath, JSON.stringify(contractAddressesAmoy, null, 2));
+  console.log("Contract addresses updated in both files");
 }
 
 main()

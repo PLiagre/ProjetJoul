@@ -2,13 +2,15 @@
 
 import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
-import { formatEther, formatUnits, parseEther } from "viem";
+import { formatEther, formatUnits, parseEther, keccak256 } from "viem";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
 import { VotingComponent } from "../shared/voting-component";
+import { useState, useCallback } from "react";
 
 export function ConsumerDashboard() {
   const { address } = useAccount();
-  const { offers, currentUser, purchaseOffer } = useEnergyExchange();
+  const { offers, currentUser, commitToPurchase, purchaseOffer } = useEnergyExchange();
+  const [pendingPurchases, setPendingPurchases] = useState<{[key: string]: { secret: `0x${string}`, totalPrice: string }}>({});
 
   const { data: maticBalance } = useBalance({
     address: address,
@@ -53,13 +55,54 @@ export function ConsumerDashboard() {
     return formatEther(weiPerKwh);
   };
 
-  const handlePurchase = async (offerId: bigint, totalPriceInMatic: string) => {
+  // Generate a random secret and its commitment
+  const generateSecretAndCommitment = useCallback(() => {
+    // Generate a random 32-byte secret
+    const randomBytes = new Uint8Array(32);
+    crypto.getRandomValues(randomBytes);
+    const secret = `0x${Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('')}` as `0x${string}`;
+    
+    // Generate commitment by hashing the secret
+    const commitment = keccak256(secret);
+    
+    return { secret, commitment };
+  }, []);
+
+  const handleInitiatePurchase = async (offerId: bigint, totalPriceInMatic: string) => {
     try {
-      // Convert the total price from MATIC to wei
-      const totalPriceInWei = parseEther(totalPriceInMatic);
-      await purchaseOffer(offerId, totalPriceInWei);
+      const { secret, commitment } = generateSecretAndCommitment();
+      
+      // Submit commitment
+      await commitToPurchase(commitment);
+      
+      // Store secret and price for the actual purchase
+      setPendingPurchases(prev => ({
+        ...prev,
+        [offerId.toString()]: { secret, totalPrice: totalPriceInMatic }
+      }));
     } catch (error) {
-      console.error("Error purchasing offer:", error);
+      console.error("Error initiating purchase:", error);
+    }
+  };
+
+  const handleCompletePurchase = async (offerId: bigint) => {
+    try {
+      const purchaseInfo = pendingPurchases[offerId.toString()];
+      if (!purchaseInfo) {
+        throw new Error("No pending purchase found");
+      }
+
+      const totalPriceInWei = parseEther(purchaseInfo.totalPrice);
+      await purchaseOffer(offerId, totalPriceInWei, purchaseInfo.secret);
+      
+      // Clear the pending purchase
+      setPendingPurchases(prev => {
+        const newState = { ...prev };
+        delete newState[offerId.toString()];
+        return newState;
+      });
+    } catch (error) {
+      console.error("Error completing purchase:", error);
     }
   };
 
@@ -119,6 +162,7 @@ export function ConsumerDashboard() {
             {activeOffers.map((offer) => {
               // Calculate total price in MATIC
               const totalPriceInMatic = formatEther(offer.pricePerUnit * offer.quantity);
+              const isPending = pendingPurchases[offer.id.toString()];
               
               return (
                 <div
@@ -134,12 +178,21 @@ export function ConsumerDashboard() {
                       Total Price: {totalPriceInMatic} MATIC
                     </p>
                   </div>
-                  <button
-                    onClick={() => handlePurchase(offer.id, totalPriceInMatic)}
-                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    Purchase Energy
-                  </button>
+                  {!isPending ? (
+                    <button
+                      onClick={() => handleInitiatePurchase(offer.id, totalPriceInMatic)}
+                      className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Initiate Purchase
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleCompletePurchase(offer.id)}
+                      className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Complete Purchase
+                    </button>
+                  )}
                 </div>
               );
             })}
