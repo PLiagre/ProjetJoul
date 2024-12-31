@@ -6,7 +6,6 @@ import { useUserManagementContext } from './user-management-provider';
 import { Address, PublicClient } from 'viem';
 
 interface VoterInfo {
-  isRegistered: boolean;
   hasVoted: boolean;
   votedProposalId: bigint;
 }
@@ -21,7 +20,6 @@ interface Distribution {
 interface VotingContextType {
   voterInfo: VoterInfo | null;
   workflowStatus: number;
-  registerVoter: (address: string) => Promise<void>;
   vote: (proposalId: number) => Promise<void>;
   startVotingSession: () => Promise<void>;
   endVotingSession: () => Promise<void>;
@@ -141,44 +139,6 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     };
   }, [publicClient, isConnected, contractAddress]);
 
-  const handleRegisterVoter = async (voterAddress: string) => {
-    if (!walletClient || !isConnected || !publicClient || !address) {
-      throw new Error('Please connect your wallet first');
-    }
-
-    try {
-      const { request } = await publicClient.simulateContract({
-        address: contractAddress,
-        abi,
-        functionName: 'addVoter',
-        args: [voterAddress as Address],
-        account: address,
-      });
-
-      const hash = await walletClient.writeContract(request);
-
-      toast({
-        title: "Registering Voter",
-        description: "Please wait while the voter is being registered...",
-      });
-
-      await publicClient.waitForTransactionReceipt({ hash });
-
-      toast({
-        title: "Voter Registered",
-        description: "The voter has been successfully registered.",
-      });
-    } catch (error) {
-      console.error('Register voter error:', error);
-      toast({
-        title: "Registration Failed",
-        description: parseContractError(error),
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
   const getProposalVoteCount = async (proposalId: number): Promise<bigint> => {
     if (!publicClient || !isConnected) {
       throw new Error('Please connect your wallet first');
@@ -288,6 +248,7 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+
       const { request } = await publicClient.simulateContract({
         address: contractAddress,
         abi,
@@ -411,7 +372,6 @@ export function VotingProvider({ children }: { children: ReactNode }) {
   const value = {
     voterInfo,
     workflowStatus,
-    registerVoter: handleRegisterVoter,
     vote: handleVote,
     startVotingSession: handleStartVotingSession,
     endVotingSession: handleEndVotingSession,

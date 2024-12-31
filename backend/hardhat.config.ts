@@ -21,6 +21,9 @@ const config: HardhatUserConfig = {
     localhost: {
       url: "http://127.0.0.1:8545/",
       accounts: [HARDHAT_DEFAULT_PRIVATE_KEY, process.env.PRIVATE_KEY as string],
+      gas: 5000000,
+      gasMultiplier: 1.5,
+      blockGasLimit: 30000000
     },
     polygonAmoy: {
       url: "https://rpc-amoy.polygon.technology",

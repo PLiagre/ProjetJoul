@@ -15,10 +15,9 @@ contract JoulToken is ERC20Pausable, AccessControl {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    // Taux de récompense en pourcentage (base 1000)
-    uint256 public constant PRODUCTION_REWARD_RATE = 10; // 1%
-    uint256 public constant PURCHASE_REWARD_RATE = 5;    // 0.5%
-    uint256 public constant SALE_REWARD_RATE = 5;       // 0.5%
+    // Récompenses fixes en JOUL (avec 18 décimales)
+    uint256 public constant FIXED_REWARD = 500000000000000000; // 0.5 JOUL
+    uint256 public constant PRODUCTION_REWARD_RATE = 1; // 0.1%
 
     // Limites de minting quotidiennes
     uint256 public constant DAILY_MINT_LIMIT = 1000000 * 10**18; // 1M tokens
@@ -71,7 +70,7 @@ contract JoulToken is ERC20Pausable, AccessControl {
         require(to != address(0), "Invalid recipient address");
         require(purchaseAmount > 0, "Amount must be positive");
 
-        uint256 rewardAmount = (purchaseAmount * PURCHASE_REWARD_RATE) / 1000;
+        uint256 rewardAmount = FIXED_REWARD;
         _mintWithLimit(to, rewardAmount);
         
         emit RewardMinted(to, rewardAmount, "PURCHASE", purchaseAmount);
@@ -90,7 +89,7 @@ contract JoulToken is ERC20Pausable, AccessControl {
         require(to != address(0), "Invalid recipient address");
         require(saleAmount > 0, "Amount must be positive");
 
-        uint256 rewardAmount = (saleAmount * SALE_REWARD_RATE) / 1000;
+        uint256 rewardAmount = FIXED_REWARD;
         _mintWithLimit(to, rewardAmount);
         
         emit RewardMinted(to, rewardAmount, "SALE", saleAmount);

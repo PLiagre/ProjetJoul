@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useAccount, useBalance, useContractRead } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
+import { useJoulToken } from "../../hooks/useJoulToken";
 import { formatEther, formatUnits } from "viem";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
 import { VotingComponent } from "../shared/voting-component";
+import { useToast } from "../../components/ui/use-toast";
 
 export function ProducerDashboard() {
   const { address } = useAccount();
@@ -18,13 +20,11 @@ export function ProducerDashboard() {
     address: address,
   });
 
-  const { data: joulBalance } = useBalance({
-    address: address,
-    token: CONTRACT_ADDRESSES.JOUL_TOKEN as `0x${string}`,
-  });
+  const { balance: joulBalance } = useJoulToken();
+  const { toast } = useToast();
 
-  // Format JOUL balance with 18 decimals
-  const formattedJoulBalance = joulBalance ? formatUnits(joulBalance.value, 18) : "0";
+  // JOUL balance is already formatted by the hook
+  const formattedJoulBalance = joulBalance ? Number(joulBalance).toFixed(2) : "0";
 
   // Read NFT balance
   const { data: nftBalance } = useContractRead({
@@ -75,12 +75,19 @@ export function ProducerDashboard() {
       setPricePerUnit("");
     } catch (error) {
       console.error("Error creating offer:", error);
+      // Show error to user
+      const errorMessage = error instanceof Error ? error.message : "Failed to create offer";
+      toast({
+        title: "Error Creating Offer",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
   };
 
   // Convert Wh to kWh for display
   const formatQuantity = (whQuantity: bigint) => {
-    return (Number(whQuantity) / 1000).toFixed(3);
+    return (Number(whQuantity) / 1000).toFixed(0);
   };
 
   // Format price from wei/Wh to MATIC/kWh
@@ -104,7 +111,12 @@ export function ProducerDashboard() {
               <p className="text-white text-xl font-semibold">{maticBalance?.formatted || "0"} MATIC</p>
             </div>
             <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 mb-2">JOUL Balance</p>
+              <p className="text-gray-400 mb-2 flex items-center">
+                JOUL Balance
+                <span className="ml-2 text-xs bg-gray-600 px-2 py-1 rounded" title="JOUL tokens are rewards for energy production and sales. You receive 0.1% of kWh in JOUL for production and 0.5 JOUL for each validated sale.">
+                  ?
+                </span>
+              </p>
               <p className="text-white text-xl font-semibold">{formattedJoulBalance} JOUL</p>
             </div>
             <div className="bg-gray-700 rounded-lg p-4">

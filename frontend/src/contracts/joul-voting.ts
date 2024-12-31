@@ -11,17 +11,39 @@ export const VOTE_COST = BigInt("1000000000000000000"); // 1 JOUL token (18 deci
 
 export const abi = [
   {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "voterAddress",
-        "type": "address"
-      }
-    ],
-    "name": "VoterRegistered",
-    "type": "event"
+    "inputs": [],
+    "name": "AlreadyVoted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InsufficientJoulTokens",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidProposalId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidWorkflowStatus",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "VotesNotTallied",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "VotingSessionNotEnded",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "VotingSessionNotStarted",
+    "type": "error"
   },
   {
     "anonymous": false,
@@ -73,19 +95,6 @@ export const abi = [
     "type": "constructor"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_addr",
-        "type": "address"
-      }
-    ],
-    "name": "addVoter",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "endVotingSession",
     "outputs": [],
@@ -123,11 +132,6 @@ export const abi = [
     "outputs": [
       {
         "components": [
-          {
-            "internalType": "bool",
-            "name": "isRegistered",
-            "type": "bool"
-          },
           {
             "internalType": "bool",
             "name": "hasVoted",
@@ -322,7 +326,6 @@ export type Distribution = {
 };
 
 export enum WorkflowStatus {
-  RegisteringVoters,
   VotingSessionStarted,
   VotingSessionEnded,
   VotesTallied,

@@ -20,17 +20,24 @@ contract JoulVoting is Ownable {
     }
 
     struct Voter {
-        bool isRegistered;
         bool hasVoted;
         uint votedProposalId;
     }
 
     enum WorkflowStatus {
-        RegisteringVoters,
         VotingSessionStarted,
         VotingSessionEnded,
         VotesTallied
     }
+
+    // Custom errors
+    error VotingSessionNotStarted();
+    error AlreadyVoted();
+    error InvalidProposalId();
+    error InsufficientJoulTokens();
+    error InvalidWorkflowStatus();
+    error VotingSessionNotEnded();
+    error VotesNotTallied();
 
     // Fixed distribution proposals
     Distribution[3] public proposals = [
@@ -55,11 +62,6 @@ contract JoulVoting is Ownable {
         proposalVoteCounts = new uint[](3);
     }
 
-    modifier onlyVoters() {
-        require(voters[msg.sender].isRegistered, "You're not a registered voter");
-        _;
-    }
-
     /**
      * @notice Returns the details of a voter
      * @param _addr The address of the voter
@@ -73,31 +75,19 @@ contract JoulVoting is Ownable {
      * @param _id The ID of the proposal (0-2)
      */
     function getProposalVoteCount(uint _id) external view returns (uint) {
-        require(_id < 3, "Invalid proposal ID");
+        if (_id >= 3) revert InvalidProposalId();
         return proposalVoteCounts[_id];
-    }
-
-    /**
-     * @notice Registers a new voter (producer or consumer)
-     * @param _addr The address of the voter to register
-     */
-    function addVoter(address _addr) external onlyOwner {
-        require(workflowStatus == WorkflowStatus.RegisteringVoters, "Voters registration is not open");
-        require(!voters[_addr].isRegistered, "Already registered");
-        
-        voters[_addr].isRegistered = true;
-        emit VoterRegistered(_addr);
     }
 
     /**
      * @notice Casts a vote for a proposal
      * @param _id The ID of the proposal to vote for (0-2)
      */
-    function setVote(uint _id) external onlyVoters {
-        require(workflowStatus == WorkflowStatus.VotingSessionStarted, "Voting session hasn't started");
-        require(!voters[msg.sender].hasVoted, "Already voted");
-        require(_id < 3, "Invalid proposal ID");
-        require(joulToken.balanceOf(msg.sender) >= 1 ether, "Insufficient JOUL tokens");
+    function setVote(uint _id) external {
+        if (workflowStatus != WorkflowStatus.VotingSessionStarted) revert VotingSessionNotStarted();
+        if (voters[msg.sender].hasVoted) revert AlreadyVoted();
+        if (_id >= 3) revert InvalidProposalId();
+        if (joulToken.balanceOf(msg.sender) < 1 ether) revert InsufficientJoulTokens();
 
         // Burn 1 JOUL token by sending to dead address
         joulToken.safeTransferFrom(
@@ -117,16 +107,16 @@ contract JoulVoting is Ownable {
      * @notice Starts the voting session
      */
     function startVotingSession() external onlyOwner {
-        require(workflowStatus == WorkflowStatus.RegisteringVoters, "Invalid workflow status");
+        if (workflowStatus != WorkflowStatus.VotesTallied) revert InvalidWorkflowStatus();
         workflowStatus = WorkflowStatus.VotingSessionStarted;
-        emit WorkflowStatusChange(WorkflowStatus.RegisteringVoters, WorkflowStatus.VotingSessionStarted);
+        emit WorkflowStatusChange(WorkflowStatus.VotesTallied, WorkflowStatus.VotingSessionStarted);
     }
 
     /**
      * @notice Ends the voting session
      */
     function endVotingSession() external onlyOwner {
-        require(workflowStatus == WorkflowStatus.VotingSessionStarted, "Voting session hasn't started");
+        if (workflowStatus != WorkflowStatus.VotingSessionStarted) revert VotingSessionNotStarted();
         workflowStatus = WorkflowStatus.VotingSessionEnded;
         emit WorkflowStatusChange(WorkflowStatus.VotingSessionStarted, WorkflowStatus.VotingSessionEnded);
     }
@@ -135,7 +125,7 @@ contract JoulVoting is Ownable {
      * @notice Tallies the votes and determines the winning proposal
      */
     function tallyVotes() external onlyOwner {
-        require(workflowStatus == WorkflowStatus.VotingSessionEnded, "Voting session not ended");
+        if (workflowStatus != WorkflowStatus.VotingSessionEnded) revert VotingSessionNotEnded();
         
         uint winningVoteCount = 0;
         
@@ -154,7 +144,7 @@ contract JoulVoting is Ownable {
      * @notice Returns the winning distribution proposal
      */
     function getWinningDistribution() external view returns (Distribution memory) {
-        require(workflowStatus == WorkflowStatus.VotesTallied, "Votes not tallied yet");
+        if (workflowStatus != WorkflowStatus.VotesTallied) revert VotesNotTallied();
         return proposals[winningProposalID];
     }
 }

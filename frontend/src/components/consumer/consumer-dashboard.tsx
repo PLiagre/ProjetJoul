@@ -2,7 +2,8 @@
 
 import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
-import { formatEther, formatUnits, parseEther, keccak256 } from "viem";
+import { formatEther, parseEther, keccak256 } from "viem";
+import { useJoulToken } from "../../hooks/useJoulToken";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
 import { VotingComponent } from "../shared/voting-component";
 import { useState, useCallback } from "react";
@@ -16,15 +17,10 @@ export function ConsumerDashboard() {
     address: address,
   });
 
-  const { data: joulBalance } = useBalance({
-    address: address,
-    token: CONTRACT_ADDRESSES.JOUL_TOKEN as `0x${string}`,
-  });
+  const { balance: joulBalance } = useJoulToken();
 
-  // Format JOUL balance with 18 decimals and limit to 1 decimal place since we deal with 0.5 JOUL increments
-  const formattedJoulBalance = joulBalance 
-    ? Number(formatUnits(joulBalance.value, 18)).toFixed(1)
-    : "0";
+  // Format to 1 decimal place since we deal with 0.5 JOUL increments
+  const formattedJoulBalance = joulBalance ? Number(joulBalance).toFixed(1) : "0";
 
   // Add access control checks
   if (!address) {
@@ -46,7 +42,7 @@ export function ConsumerDashboard() {
 
   // Format quantity from Wh to kWh for display
   const formatQuantity = (whQuantity: bigint) => {
-    return (Number(whQuantity) / 1000).toFixed(3);
+    return (Number(whQuantity) / 1000).toFixed(0);
   };
 
   // Format price from wei/Wh to MATIC/kWh
@@ -121,7 +117,9 @@ export function ConsumerDashboard() {
   // Filter user's purchases
   const userPurchases = offers.filter(
     (offer) => 
-      offer.buyer.toLowerCase() === address?.toLowerCase() && // User is buyer
+      address && 
+      offer.buyer !== '0x0000000000000000000000000000000000000000' &&
+      offer.buyer.toLowerCase() === address.toLowerCase() && // User is buyer
       !offer.isPendingCreation // Not pending creation
   );
 

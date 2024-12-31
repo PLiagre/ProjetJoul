@@ -11,7 +11,7 @@ import { VotingManagement } from "./voting-management";
 
 export function AdminDashboard() {
   const { address, isConnected } = useAccount();
-  const { addUser, currentUser, offers, validateDelivery, validateOfferCreation } = useEnergyExchange();
+  const { addUser, currentUser, offers, validateDelivery, validateOfferCreation, hasEnedisRole } = useEnergyExchange();
   const { initiateUserRemoval, cancelUserRemoval, finalizeUserRemoval, isRemovingUser } = useUserManagementContext();
   const [newUserAddress, setNewUserAddress] = useState("");
   const [removalAddress, setRemovalAddress] = useState("");
@@ -26,6 +26,19 @@ export function AdminDashboard() {
       </div>
     );
   }
+
+  // Check for both admin and ENEDIS roles
+  const [hasEnedis, setHasEnedis] = useState(false);
+
+  useEffect(() => {
+    async function checkEnedisRole() {
+      if (address) {
+        const hasEnedisAccess = await hasEnedisRole(address);
+        setHasEnedis(hasEnedisAccess);
+      }
+    }
+    checkEnedisRole();
+  }, [address, hasEnedisRole]);
 
   // Early return if not admin
   if (!currentUser?.isAdmin) {
@@ -139,7 +152,7 @@ export function AdminDashboard() {
 
   // Format quantity from Wh to kWh for display
   const formatQuantity = (whQuantity: bigint) => {
-    return (Number(whQuantity) / 1000).toFixed(3);
+    return (Number(whQuantity) / 1000).toFixed(0);
   };
 
   // Format price from wei/Wh to MATIC/kWh
@@ -205,81 +218,85 @@ export function AdminDashboard() {
         {/* Voting Management Section */}
         <VotingManagement />
 
-        {/* Pending Offer Creations Section */}
-        <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">Pending Offer Creations</h2>
-          <div className="space-y-4">
-            {pendingOfferCreations.map((offer) => (
-              <div
-                key={offer.id.toString()}
-                className="bg-gray-700 rounded-lg p-4"
-              >
-                <div className="grid grid-cols-2 gap-2 text-white mb-4">
-                  <p>Producer: {offer.producer}</p>
-                  <p>Energy Type: {offer.energyType}</p>
-                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
+        {/* Pending Offer Creations Section - Only visible to ENEDIS role */}
+        {hasEnedis && (
+          <div className="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">Pending Offer Creations</h2>
+            <div className="space-y-4">
+              {pendingOfferCreations.map((offer) => (
+                <div
+                  key={offer.id.toString()}
+                  className="bg-gray-700 rounded-lg p-4"
+                >
+                  <div className="grid grid-cols-2 gap-2 text-white mb-4">
+                    <p>Producer: {offer.producer}</p>
+                    <p>Energy Type: {offer.energyType}</p>
+                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
+                  </div>
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => handleValidateOfferCreation(offer.id, true)}
+                      className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Validate Creation
+                    </button>
+                    <button
+                      onClick={() => handleValidateOfferCreation(offer.id, false)}
+                      className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      Reject Creation
+                    </button>
+                  </div>
                 </div>
-                <div className="flex space-x-4">
-                  <button
-                    onClick={() => handleValidateOfferCreation(offer.id, true)}
-                    className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  >
-                    Validate Creation
-                  </button>
-                  <button
-                    onClick={() => handleValidateOfferCreation(offer.id, false)}
-                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                  >
-                    Reject Creation
-                  </button>
-                </div>
-              </div>
-            ))}
-            {pendingOfferCreations.length === 0 && (
-              <p className="text-gray-400">No pending offer creations to validate</p>
-            )}
+              ))}
+              {pendingOfferCreations.length === 0 && (
+                <p className="text-gray-400">No pending offer creations to validate</p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Pending Energy Transfers Section */}
-        <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">Pending Energy Transfers</h2>
-          <div className="space-y-4">
-            {pendingTransfers.map((offer) => (
-              <div
-                key={offer.id.toString()}
-                className="bg-gray-700 rounded-lg p-4"
-              >
-                <div className="grid grid-cols-2 gap-2 text-white mb-4">
-                  <p>Producer: {offer.producer}</p>
-                  <p>Consumer: {offer.buyer}</p>
-                  <p>Energy Type: {offer.energyType}</p>
-                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
-                  <p>Total Price: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC</p>
+        {/* Pending Energy Transfers Section - Only visible to ENEDIS role */}
+        {hasEnedis && (
+          <div className="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">Pending Energy Transfers</h2>
+            <div className="space-y-4">
+              {pendingTransfers.map((offer) => (
+                <div
+                  key={offer.id.toString()}
+                  className="bg-gray-700 rounded-lg p-4"
+                >
+                  <div className="grid grid-cols-2 gap-2 text-white mb-4">
+                    <p>Producer: {offer.producer}</p>
+                    <p>Consumer: {offer.buyer}</p>
+                    <p>Energy Type: {offer.energyType}</p>
+                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
+                    <p>Total Price: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC</p>
+                  </div>
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => handleValidateDelivery(offer.id, true)}
+                      className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Validate Transfer
+                    </button>
+                    <button
+                      onClick={() => handleValidateDelivery(offer.id, false)}
+                      className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      Reject Transfer
+                    </button>
+                  </div>
                 </div>
-                <div className="flex space-x-4">
-                  <button
-                    onClick={() => handleValidateDelivery(offer.id, true)}
-                    className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  >
-                    Validate Transfer
-                  </button>
-                  <button
-                    onClick={() => handleValidateDelivery(offer.id, false)}
-                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                  >
-                    Reject Transfer
-                  </button>
-                </div>
-              </div>
-            ))}
-            {pendingTransfers.length === 0 && (
-              <p className="text-gray-400">No pending transfers to validate</p>
-            )}
+              ))}
+              {pendingTransfers.length === 0 && (
+                <p className="text-gray-400">No pending transfers to validate</p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* User Management Section */}
         <div className="bg-gray-800 rounded-lg p-6 mb-8">

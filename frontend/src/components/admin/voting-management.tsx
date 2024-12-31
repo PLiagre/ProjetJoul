@@ -19,7 +19,7 @@ export function VotingManagement() {
 
   // Fetch vote counts when voting session is ended or votes are tallied
   React.useEffect(() => {
-    if (workflowStatus >= 2) {
+    if (workflowStatus >= 1) {
       Promise.all(proposals.map((_, index) => getProposalVoteCount(index)))
         .then(setVoteCounts)
         .catch(console.error);
@@ -29,12 +29,10 @@ export function VotingManagement() {
   const getStatusText = (status: number) => {
     switch (status) {
       case 0:
-        return 'Registering Voters';
-      case 1:
         return 'Voting Session Active';
-      case 2:
+      case 1:
         return 'Voting Session Ended';
-      case 3:
+      case 2:
         return 'Votes Tallied';
       default:
         return 'Unknown Status';
@@ -74,16 +72,16 @@ export function VotingManagement() {
         <p className="text-white mb-2">Current Status: {getStatusText(workflowStatus)}</p>
         
         <div className="space-y-4">
-          {workflowStatus === 0 && (
+          {workflowStatus === 2 && (
             <button
               onClick={startVotingSession}
               className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             >
-              Start Voting Session
+              Start New Voting Session
             </button>
           )}
 
-          {workflowStatus === 1 && (
+          {workflowStatus === 0 && (
             <button
               onClick={endVotingSession}
               className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -92,7 +90,7 @@ export function VotingManagement() {
             </button>
           )}
 
-          {workflowStatus === 2 && (
+          {workflowStatus === 1 && (
             <button
               onClick={tallyVotes}
               className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"

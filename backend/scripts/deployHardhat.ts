@@ -18,7 +18,6 @@ async function main() {
     // @ts-ignore
     const [deployer] = await hre.ethers.getSigners();
     console.log("Deploying contracts with account:", deployer.address);
-    console.log("Network: Polygon Amoy");
 
     // 1. Déploiement du JoulToken
     console.log("\nDeploying JoulToken...");
@@ -192,7 +191,7 @@ async function main() {
 
       // Sauvegarder les adresses des contrats
       const deploymentInfo = {
-        network: "polygonAmoy",
+        network: "hardhat",
         contracts: {
           JoulToken: joulTokenAddress,
           EnergyNFT: energyNFTAddress,
@@ -218,7 +217,7 @@ async function main() {
         fs.mkdirSync(deploymentPath);
       }
       fs.writeFileSync(
-        path.join(deploymentPath, `deployment-amoy-${deploymentInfo.timestamp}.json`),
+        path.join(deploymentPath, `deployment-${deploymentInfo.timestamp}.json`),
         JSON.stringify(deploymentInfo, null, 2)
       );
 
@@ -236,13 +235,13 @@ async function main() {
         fs.mkdirSync(frontendPath, { recursive: true });
       }
       fs.writeFileSync(
-        path.join(frontendPath, "contract-addresses-amoy.json"),
+        path.join(frontendPath, "contract-addresses.json"),
         JSON.stringify(frontendAddresses, null, 2)
       );
 
       console.log("\nDeployment successful! Contract addresses saved to:");
-      console.log(`- ${deploymentPath}/deployment-amoy-${deploymentInfo.timestamp}.json`);
-      console.log(`- ${frontendPath}/contract-addresses-amoy.json`);
+      console.log(`- ${deploymentPath}/deployment-${deploymentInfo.timestamp}.json`);
+      console.log(`- ${frontendPath}/contract-addresses.json`);
 
     } catch (error) {
       console.error("\nDeployment failed!");

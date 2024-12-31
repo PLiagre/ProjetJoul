@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
+import "hardhat/console.sol";
 import "./JoulToken.sol";
 import "./EnergyNFT.sol";
 import "./UserManagement.sol";
@@ -15,7 +16,6 @@ import "./UserManagement.sol";
  * - Gestion des offres d'énergie
  * - Distribution des frais
  * - Intégration avec ENEDIS
- * - Système de validation avec limite de 24h
  */
 contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     using Address for address payable;
@@ -45,7 +45,6 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         uint256 quantity;     // Wh
         uint256 pricePerUnit; // MATIC par Wh
         string energyType;
-        uint256 timestamp;
         bool isActive;
         address buyer;
         bool isValidated;
@@ -54,14 +53,11 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     }
 
     mapping(uint256 => EnergyOffer) public offers;
-    mapping(uint256 => uint256) public offerLocks; // offerId => timestamp
     mapping(address => bytes32) public commitments; // Protection contre le front-running
     uint256 private _nextOfferId;
 
     address public immutable enedisAddress;
     address public immutable poolAddress;
-    uint256 public constant VALIDATION_DEADLINE = 24 hours;
-    uint256 public constant VALIDATION_MARGIN = 5 minutes;
 
     event OfferCreated(
         uint256 indexed offerId,
@@ -180,7 +176,6 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             quantity: quantity,
             pricePerUnit: pricePerUnit,
             energyType: energyType,
-            timestamp: block.timestamp,
             isActive: false,
             buyer: address(0),
             isValidated: false,
@@ -212,7 +207,12 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         
         if (isValid) {
             offer.isActive = true;
-            joulToken.mintProductionReward(offer.producer, offer.quantity);
+            // Calculate 0.1% of the energy amount in Wh, then convert to JOUL
+            uint256 rewardAmount = (offer.quantity * ONE_JOUL) / 1000000; // (Wh * 10^18) / (1000 * 1000)
+            console.log("Minting production reward:", offer.producer, rewardAmount);
+            require(rewardAmount > 0, "Production reward amount must be positive");
+            joulToken.mintProductionReward(offer.producer, rewardAmount);
+            console.log("Production reward minted successfully");
         }
 
         emit OfferCreationValidated(offerId, isValid);
@@ -239,81 +239,191 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
 
         offer.buyer = msg.sender;
         offer.isActive = false;
-        offerLocks[offerId] = block.timestamp;
 
         emit OfferPurchased(offerId, msg.sender, totalPrice);
     }
 
     function validateAndDistribute(uint256 offerId, bool isValid) 
         external 
-        onlyRole(ENEDIS_ROLE) 
         whenNotPaused 
-        nonReentrant
+        nonReentrant 
+        returns (bool)
     {
+        console.log("\n=== validateAndDistribute called ===");
+        console.log("Transaction sender:", msg.sender);
+        
+        // Debug: Check if caller has ENEDIS_ROLE
+        console.log("Caller address:", msg.sender);
+        console.log("Has ENEDIS_ROLE:", hasRole(ENEDIS_ROLE, msg.sender));
+
+        // Debug: Check if EnergyExchange has MINTER_ROLE
+        bytes32 minterRole = joulToken.MINTER_ROLE();
+        console.log("EnergyExchange address:", address(this));
+        console.log("Has MINTER_ROLE:", joulToken.hasRole(minterRole, address(this)));
+
+        console.log("Starting validateAndDistribute for offer:", offerId);
+        console.log("isValid:", isValid);
+        
+        // Check if offer exists and get it
+        require(offerId < _nextOfferId, "Invalid offer ID");
         EnergyOffer storage offer = offers[offerId];
+        console.log("\nOffer State:");
+        console.log("Producer:", offer.producer);
+        console.log("Buyer:", offer.buyer);
+        console.log("isActive:", offer.isActive);
+        console.log("isValidated:", offer.isValidated);
+        console.log("isCompleted:", offer.isCompleted);
+        console.log("isPendingCreation:", offer.isPendingCreation);
+        
+        // Validate offer state
+        require(offer.producer != address(0), "Offer does not exist");
         require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer != address(0), "Offer not purchased");
-        require(
-            block.timestamp + VALIDATION_MARGIN <= offerLocks[offerId] + VALIDATION_DEADLINE,
-            "Validation deadline exceeded"
-        );
+        require(!offer.isPendingCreation, "Offer creation not validated");
+        console.log("\nOffer state validation passed");
 
+        // Calculate refund amount before state changes
+        uint256 totalPrice = offer.quantity * offer.pricePerUnit;
+        console.log("Total price:", totalPrice);
+
+        // Update state
         offer.isValidated = isValid;
         offer.isCompleted = true;
+        console.log("Offer state updated. isValidated:", isValid, "isCompleted: true");
 
+        // Emit event
         emit OfferValidated(offerId, isValid);
+        console.log("OfferValidated event emitted");
 
+        // Handle validation result
         if (isValid) {
+            console.log("Offer is valid, proceeding with distribution");
             _distributeFeesAndRewards(offerId);
         } else {
-            uint256 totalPrice = offer.quantity * offer.pricePerUnit;
-            payable(offer.buyer).sendValue(totalPrice);
+            console.log("Offer is invalid, proceeding with refund");
+            (bool success, ) = payable(offer.buyer).call{value: totalPrice}("");
+            require(success, "Refund transfer failed");
+            console.log("Refund completed successfully");
         }
-    }
-
-    function cancelExpiredOffer(uint256 offerId)
-        external
-        whenNotPaused
-        nonReentrant
-    {
-        EnergyOffer storage offer = offers[offerId];
-        require(!offer.isCompleted, "Offer already completed");
-        require(offer.buyer != address(0), "Offer not purchased");
-        require(
-            block.timestamp > offerLocks[offerId] + VALIDATION_DEADLINE,
-            "Validation deadline not exceeded"
-        );
-
-        offer.isCompleted = true;
-        offer.isValidated = false;
-
-        uint256 totalPrice = offer.quantity * offer.pricePerUnit;
-        payable(offer.buyer).sendValue(totalPrice);
-
-        emit OfferValidated(offerId, false);
+        return true;
     }
 
     function _distributeFeesAndRewards(uint256 offerId) private {
+        console.log("Starting distribution for offer:", offerId);
+        
         EnergyOffer storage offer = offers[offerId];
         uint256 totalAmount = offer.quantity * offer.pricePerUnit;
+        console.log("Total amount:", totalAmount);
         
         uint256 producerAmount = (totalAmount * PRODUCER_SHARE) / 1000;
         uint256 enedisAmount = (totalAmount * ENEDIS_SHARE) / 1000;
         uint256 platformAmount = (totalAmount * PLATFORM_SHARE) / 1000;
         uint256 poolAmount = (totalAmount * POOL_SHARE) / 1000;
+        
+        console.log("Calculated shares:");
+        console.log("Producer:", producerAmount);
+        console.log("Enedis:", enedisAmount);
+        console.log("Platform:", platformAmount);
+        console.log("Pool:", poolAmount);
+        console.log("Sum:", producerAmount + enedisAmount + platformAmount + poolAmount);
+        console.log("Total:", totalAmount);
 
         require(
             producerAmount + enedisAmount + platformAmount + poolAmount == totalAmount,
             "Distribution amount mismatch"
         );
 
+        console.log("Sending to producer");
+        console.log("Address:", offer.producer);
+        console.log("Amount:", producerAmount);
         payable(offer.producer).sendValue(producerAmount);
+        console.log("Sent to producer");
+
+        console.log("Sending to Enedis");
+        console.log("Address:", enedisAddress);
+        console.log("Amount:", enedisAmount);
         payable(enedisAddress).sendValue(enedisAmount);
+        console.log("Sent to Enedis");
+
+        console.log("Sending to pool");
+        console.log("Address:", poolAddress);
+        console.log("Amount:", poolAmount);
         payable(poolAddress).sendValue(poolAmount);
+        console.log("Sent to pool");
 
-        joulToken.mintSaleReward(offer.producer, ONE_JOUL * 100);
-        joulToken.mintPurchaseReward(offer.buyer, ONE_JOUL * 100);
+        // Fixed reward of 0.5 JOUL for both sale and purchase
+        uint256 fixedReward = ONE_JOUL / 2; // 0.5 JOUL
+        console.log("Fixed reward amount:", fixedReward);
+        
+        // Verify addresses before minting
+        require(offer.producer != address(0), "Invalid producer address for minting");
+        require(offer.buyer != address(0), "Invalid buyer address for minting");
+        
+        console.log("Attempting to mint sale reward");
+        console.log("Producer address:", offer.producer);
+        console.log("Reward amount:", fixedReward);
+        
+        // Check if EnergyExchange has MINTER_ROLE
+        bytes32 minterRole = joulToken.MINTER_ROLE();
+        bool hasMinterRole = joulToken.hasRole(minterRole, address(this));
+        console.log("EnergyExchange has MINTER_ROLE:", hasMinterRole);
 
+        // Get current day's minted amount
+        uint256 day = block.timestamp / 1 days;
+        uint256 currentDayMinted = joulToken.dailyMintedAmount(day);
+        console.log("Current day minted amount:", currentDayMinted);
+        
+        try joulToken.mintSaleReward(offer.producer, fixedReward) {
+            console.log("Sale reward minted successfully");
+        } catch Error(string memory reason) {
+            console.log("Sale reward minting failed with Error:", reason);
+            console.log("Checking potential issues:");
+            console.log("Producer address:", offer.producer);
+            console.log("Reward amount:", fixedReward);
+            console.log("Daily mint limit:", joulToken.DAILY_MINT_LIMIT());
+            console.log("Current day minted:", currentDayMinted);
+            revert(string(abi.encodePacked("Sale reward minting failed: ", reason)));
+        } catch Panic(uint errorCode) {
+            string memory panicReason;
+            if (errorCode == 0x01) panicReason = "Assertion failed";
+            else if (errorCode == 0x11) panicReason = "Arithmetic overflow";
+            else if (errorCode == 0x12) panicReason = "Division by zero";
+            else panicReason = "Unknown panic code";
+            console.log("Sale reward minting failed with Panic:", panicReason);
+            revert(string(abi.encodePacked("Sale reward minting failed with panic: ", panicReason)));
+        } catch (bytes memory err) {
+            console.log("Sale reward minting failed with low-level error");
+            revert("Sale reward minting failed with low-level error");
+        }
+        
+        console.log("Attempting to mint purchase reward");
+        console.log("Buyer address:", offer.buyer);
+        console.log("Reward amount:", fixedReward);
+        
+        try joulToken.mintPurchaseReward(offer.buyer, fixedReward) {
+            console.log("Purchase reward minted successfully");
+        } catch Error(string memory reason) {
+            console.log("Purchase reward minting failed with Error:", reason);
+            console.log("Checking potential issues:");
+            console.log("Buyer address:", offer.buyer);
+            console.log("Reward amount:", fixedReward);
+            console.log("Daily mint limit:", joulToken.DAILY_MINT_LIMIT());
+            console.log("Current day minted:", currentDayMinted);
+            revert(string(abi.encodePacked("Purchase reward minting failed: ", reason)));
+        } catch Panic(uint errorCode) {
+            string memory panicReason;
+            if (errorCode == 0x01) panicReason = "Assertion failed";
+            else if (errorCode == 0x11) panicReason = "Arithmetic overflow";
+            else if (errorCode == 0x12) panicReason = "Division by zero";
+            else panicReason = "Unknown panic code";
+            console.log("Purchase reward minting failed with Panic:", panicReason);
+            revert(string(abi.encodePacked("Purchase reward minting failed with panic: ", panicReason)));
+        } catch (bytes memory err) {
+            console.log("Purchase reward minting failed with low-level error");
+            revert("Purchase reward minting failed with low-level error");
+        }
+
+/*
         string memory uri = _generateTokenURI(offerId);
         energyNFT.mintCertificate(
             offer.buyer,
@@ -321,7 +431,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             offer.energyType,
             uri
         );
-
+*/
         emit FeesDistributed(
             offerId,
             producerAmount,
