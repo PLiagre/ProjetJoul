@@ -2,26 +2,25 @@
 
 import { useAccount, useBalance } from "wagmi";
 import { useEnergyExchange } from "../../contexts/energy-exchange-provider";
-import { formatEther, formatUnits, parseEther } from "viem";
+import { formatEther, parseEther, keccak256 } from "viem";
+import { useJoulToken } from "../../hooks/useJoulToken";
 import { CONTRACT_ADDRESSES } from "../../lib/wagmi-config";
+import { VotingComponent } from "../shared/voting-component";
+import { useState, useCallback } from "react";
 
 export function ConsumerDashboard() {
   const { address } = useAccount();
-  const { offers, currentUser, purchaseOffer } = useEnergyExchange();
+  const { offers, currentUser, commitToPurchase, purchaseOffer } = useEnergyExchange();
+  const [pendingPurchases, setPendingPurchases] = useState<{[key: string]: { secret: `0x${string}`, totalPrice: string }}>({});
 
   const { data: maticBalance } = useBalance({
     address: address,
   });
 
-  const { data: joulBalance } = useBalance({
-    address: address,
-    token: CONTRACT_ADDRESSES.JOUL_TOKEN as `0x${string}`,
-  });
+  const { balance: joulBalance } = useJoulToken();
 
-  // Format JOUL balance with 18 decimals and limit to 1 decimal place since we deal with 0.5 JOUL increments
-  const formattedJoulBalance = joulBalance 
-    ? Number(formatUnits(joulBalance.value, 18)).toFixed(1)
-    : "0";
+  // Format to 1 decimal place since we deal with 0.5 JOUL increments
+  const formattedJoulBalance = joulBalance ? Number(joulBalance).toFixed(1) : "0";
 
   // Add access control checks
   if (!address) {
@@ -43,7 +42,7 @@ export function ConsumerDashboard() {
 
   // Format quantity from Wh to kWh for display
   const formatQuantity = (whQuantity: bigint) => {
-    return (Number(whQuantity) / 1000).toFixed(3);
+    return (Number(whQuantity) / 1000).toFixed(0);
   };
 
   // Format price from wei/Wh to MATIC/kWh
@@ -52,13 +51,54 @@ export function ConsumerDashboard() {
     return formatEther(weiPerKwh);
   };
 
-  const handlePurchase = async (offerId: bigint, totalPriceInMatic: string) => {
+  // Generate a random secret and its commitment
+  const generateSecretAndCommitment = useCallback(() => {
+    // Generate a random 32-byte secret
+    const randomBytes = new Uint8Array(32);
+    crypto.getRandomValues(randomBytes);
+    const secret = `0x${Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('')}` as `0x${string}`;
+    
+    // Generate commitment by hashing the secret
+    const commitment = keccak256(secret);
+    
+    return { secret, commitment };
+  }, []);
+
+  const handleInitiatePurchase = async (offerId: bigint, totalPriceInMatic: string) => {
     try {
-      // Convert the total price from MATIC to wei
-      const totalPriceInWei = parseEther(totalPriceInMatic);
-      await purchaseOffer(offerId, totalPriceInWei);
+      const { secret, commitment } = generateSecretAndCommitment();
+      
+      // Submit commitment
+      await commitToPurchase(commitment);
+      
+      // Store secret and price for the actual purchase
+      setPendingPurchases(prev => ({
+        ...prev,
+        [offerId.toString()]: { secret, totalPrice: totalPriceInMatic }
+      }));
     } catch (error) {
-      console.error("Error purchasing offer:", error);
+      console.error("Error initiating purchase:", error);
+    }
+  };
+
+  const handleCompletePurchase = async (offerId: bigint) => {
+    try {
+      const purchaseInfo = pendingPurchases[offerId.toString()];
+      if (!purchaseInfo) {
+        throw new Error("No pending purchase found");
+      }
+
+      const totalPriceInWei = parseEther(purchaseInfo.totalPrice);
+      await purchaseOffer(offerId, totalPriceInWei, purchaseInfo.secret);
+      
+      // Clear the pending purchase
+      setPendingPurchases(prev => {
+        const newState = { ...prev };
+        delete newState[offerId.toString()];
+        return newState;
+      });
+    } catch (error) {
+      console.error("Error completing purchase:", error);
     }
   };
 
@@ -77,7 +117,9 @@ export function ConsumerDashboard() {
   // Filter user's purchases
   const userPurchases = offers.filter(
     (offer) => 
-      offer.buyer.toLowerCase() === address?.toLowerCase() && // User is buyer
+      address && 
+      offer.buyer !== '0x0000000000000000000000000000000000000000' &&
+      offer.buyer.toLowerCase() === address.toLowerCase() && // User is buyer
       !offer.isPendingCreation // Not pending creation
   );
 
@@ -106,6 +148,11 @@ export function ConsumerDashboard() {
           </div>
         </div>
 
+        {/* Voting Section */}
+        <div className="mb-8">
+          <VotingComponent />
+        </div>
+
         {/* Available Offers Section */}
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
           <h2 className="text-2xl font-bold mb-4 text-white">Available Energy Offers</h2>
@@ -113,6 +160,7 @@ export function ConsumerDashboard() {
             {activeOffers.map((offer) => {
               // Calculate total price in MATIC
               const totalPriceInMatic = formatEther(offer.pricePerUnit * offer.quantity);
+              const isPending = pendingPurchases[offer.id.toString()];
               
               return (
                 <div
@@ -128,12 +176,21 @@ export function ConsumerDashboard() {
                       Total Price: {totalPriceInMatic} MATIC
                     </p>
                   </div>
-                  <button
-                    onClick={() => handlePurchase(offer.id, totalPriceInMatic)}
-                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    Purchase Energy
-                  </button>
+                  {!isPending ? (
+                    <button
+                      onClick={() => handleInitiatePurchase(offer.id, totalPriceInMatic)}
+                      className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Initiate Purchase
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleCompletePurchase(offer.id)}
+                      className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Complete Purchase
+                    </button>
+                  )}
                 </div>
               );
             })}

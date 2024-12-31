@@ -8,10 +8,16 @@ import { useToast } from "../components/ui/use-toast";
 
 interface UserManagementContextType {
   addUser: (address: string, isProducer: boolean) => Promise<void>;
+  initiateUserRemoval: (address: string) => Promise<void>;
+  cancelUserRemoval: (address: string) => Promise<void>;
+  finalizeUserRemoval: (address: string) => Promise<void>;
   isAddingUser: boolean;
+  isRemovingUser: boolean;
   isProducer: (address: string) => Promise<boolean>;
   isConsumer: (address: string) => Promise<boolean>;
   isAdmin: (address: string) => Promise<boolean>;
+  hasRemovalPending: (address: string) => Promise<boolean>;
+  getRemovalTime: (address: string) => Promise<bigint | null>;
 }
 
 const UserManagementContext = createContext<UserManagementContextType | undefined>(undefined);
@@ -40,21 +46,55 @@ export function UserManagementProvider({
 }) {
   const { address } = useAccount();
   const [isAddingUser, setIsAddingUser] = useState(false);
+  const [isRemovingUser, setIsRemovingUser] = useState(false);
   const { writeContractAsync } = useWriteContract();
   const contract = useUserManagementContract();
   const publicClient = usePublicClient();
   const { toast } = useToast();
 
+  const hasRemovalPending = useCallback(async (userAddress: string): Promise<boolean> => {
+    if (!publicClient || !contract.address) return false;
+    try {
+      const formattedAddress = validateAndFormatAddress(userAddress);
+      const timestamp = await publicClient.readContract({
+        address: contract.address,
+        abi: contract.abi,
+        functionName: 'removalTimestamp',
+        args: [formattedAddress],
+      }) as bigint;
+      return timestamp > BigInt(0);
+    } catch (error) {
+      console.error("Failed to check removal status:", error);
+      return false;
+    }
+  }, [publicClient, contract]);
+
+  const getRemovalTime = useCallback(async (userAddress: string): Promise<bigint | null> => {
+    if (!publicClient || !contract.address) return null;
+    try {
+      const formattedAddress = validateAndFormatAddress(userAddress);
+      const timestamp = await publicClient.readContract({
+        address: contract.address,
+        abi: contract.abi,
+        functionName: 'removalTimestamp',
+        args: [formattedAddress],
+      }) as bigint;
+      return timestamp;
+    } catch (error) {
+      console.error("Failed to get removal time:", error);
+      return null;
+    }
+  }, [publicClient, contract]);
+
   const isProducer = useCallback(async (userAddress: string): Promise<boolean> => {
     if (!publicClient || !contract.address) return false;
     try {
       const formattedAddress = validateAndFormatAddress(userAddress);
-      const formattedRole = validateAndFormatRole(PRODUCER_ROLE);
       const data = await publicClient.readContract({
         address: contract.address,
         abi: contract.abi,
-        functionName: 'hasRole',
-        args: [formattedRole, formattedAddress],
+        functionName: 'isProducer',
+        args: [formattedAddress],
       });
       console.log('isProducer check result:', data);
       return data as boolean;
@@ -68,12 +108,11 @@ export function UserManagementProvider({
     if (!publicClient || !contract.address) return false;
     try {
       const formattedAddress = validateAndFormatAddress(userAddress);
-      const formattedRole = validateAndFormatRole(CONSUMER_ROLE);
       const data = await publicClient.readContract({
         address: contract.address,
         abi: contract.abi,
-        functionName: 'hasRole',
-        args: [formattedRole, formattedAddress],
+        functionName: 'isConsumer',
+        args: [formattedAddress],
       });
       console.log('isConsumer check result:', data);
       return data as boolean;
@@ -186,14 +225,128 @@ export function UserManagementProvider({
     }
   }, [address, writeContractAsync, contract, toast, checkUserRoles]);
 
+  const initiateUserRemoval = useCallback(async (userAddress: string) => {
+    if (!address) return;
+    
+    try {
+      setIsRemovingUser(true);
+      const formattedAddress = validateAndFormatAddress(userAddress);
+
+      toast({
+        title: "Initiating User Removal",
+        description: "Please wait while the removal process is initiated...",
+      });
+
+      await writeContractAsync({
+        ...contract,
+        functionName: 'initiateUserRemoval',
+        args: [formattedAddress],
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      toast({
+        title: "Removal Initiated",
+        description: "User removal process has been initiated. The removal will be effective after the grace period.",
+      });
+    } catch (error: any) {
+      console.error("Failed to initiate user removal:", error);
+      toast({
+        title: "Failed to Initiate Removal",
+        description: "Une erreur est survenue lors de l'initiation de la suppression.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRemovingUser(false);
+    }
+  }, [address, writeContractAsync, contract, toast]);
+
+  const cancelUserRemoval = useCallback(async (userAddress: string) => {
+    if (!address) return;
+    
+    try {
+      setIsRemovingUser(true);
+      const formattedAddress = validateAndFormatAddress(userAddress);
+
+      toast({
+        title: "Cancelling User Removal",
+        description: "Please wait while the removal process is cancelled...",
+      });
+
+      await writeContractAsync({
+        ...contract,
+        functionName: 'cancelUserRemoval',
+        args: [formattedAddress],
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      toast({
+        title: "Removal Cancelled",
+        description: "User removal process has been cancelled.",
+      });
+    } catch (error: any) {
+      console.error("Failed to cancel user removal:", error);
+      toast({
+        title: "Failed to Cancel Removal",
+        description: "Une erreur est survenue lors de l'annulation de la suppression.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRemovingUser(false);
+    }
+  }, [address, writeContractAsync, contract, toast]);
+
+  const finalizeUserRemoval = useCallback(async (userAddress: string) => {
+    if (!address) return;
+    
+    try {
+      setIsRemovingUser(true);
+      const formattedAddress = validateAndFormatAddress(userAddress);
+
+      toast({
+        title: "Finalizing User Removal",
+        description: "Please wait while the removal is finalized...",
+      });
+
+      await writeContractAsync({
+        ...contract,
+        functionName: 'finalizeUserRemoval',
+        args: [formattedAddress],
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      toast({
+        title: "Removal Finalized",
+        description: "User has been successfully removed.",
+      });
+    } catch (error: any) {
+      console.error("Failed to finalize user removal:", error);
+      toast({
+        title: "Failed to Finalize Removal",
+        description: "Une erreur est survenue lors de la finalisation de la suppression.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRemovingUser(false);
+    }
+  }, [address, writeContractAsync, contract, toast]);
+
   return (
     <UserManagementContext.Provider
       value={{
         addUser,
+        initiateUserRemoval,
+        cancelUserRemoval,
+        finalizeUserRemoval,
         isAddingUser,
+        isRemovingUser,
         isProducer,
         isConsumer,
         isAdmin,
+        hasRemovalPending,
+        getRemovalTime,
       }}
     >
       {children}

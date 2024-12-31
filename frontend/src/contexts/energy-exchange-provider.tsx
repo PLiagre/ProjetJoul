@@ -7,14 +7,12 @@ import { useUserManagementContext } from './user-management-provider';
 import { useUserManagementContract } from '../contracts/user-management';
 import { getContractAddresses } from '../lib/wagmi-config';
 
-
 interface EnergyOffer {
   id: bigint;
   producer: `0x${string}`;
   quantity: bigint;
   pricePerUnit: bigint;
   energyType: string;
-  timestamp: bigint;
   isActive: boolean;
   buyer: `0x${string}`;
   isValidated: boolean;
@@ -22,7 +20,7 @@ interface EnergyOffer {
   isPendingCreation: boolean;
 }
 
-type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, bigint, boolean, `0x${string}`, boolean, boolean, boolean];
+type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, boolean, `0x${string}`, boolean, boolean, boolean];
 
 interface User {
   address: `0x${string}`;
@@ -37,10 +35,11 @@ interface EnergyExchangeContextType {
   addUser: (address: string, isProducer: boolean) => Promise<void>;
   removeUser: (address: string) => Promise<void>;
   createOffer: (quantity: number, pricePerUnit: number, energyType: string) => Promise<void>;
-  purchaseOffer: (offerId: bigint, totalPrice: bigint) => Promise<void>;
+  commitToPurchase: (commitment: `0x${string}`) => Promise<void>;
+  purchaseOffer: (offerId: bigint, totalPrice: bigint, secret: `0x${string}`) => Promise<void>;
   validateDelivery: (offerId: bigint, isValid: boolean) => Promise<void>;
   validateOfferCreation: (offerId: bigint, isValid: boolean) => Promise<void>;
-  cancelExpiredOffer: (offerId: bigint) => Promise<void>;
+  hasEnedisRole: (address: string) => Promise<boolean>;
 }
 
 const EnergyExchangeContext = createContext<EnergyExchangeContextType | undefined>(undefined);
@@ -74,8 +73,8 @@ function parseContractError(error: any): string {
 
   if (errorMessage.includes('execution reverted')) {
     const revertReason = errorData.replace('Reverted ', '');
-    if (revertReason.includes('Validation deadline not exceeded')) {
-      return 'Cannot cancel offer yet - validation period has not expired.';
+    if (revertReason.includes('Invalid commitment')) {
+      return 'Invalid commitment. Please ensure you have committed to the purchase first.';
     }
     if (revertReason.includes('Offer already completed')) {
       return 'This offer has already been completed.';
@@ -88,9 +87,6 @@ function parseContractError(error: any): string {
     }
     if (revertReason.includes('Not a consumer')) {
       return 'Only registered consumers can perform this action.';
-    }
-    if (revertReason.includes('Not authorized')) {
-      return 'You are not authorized to perform this action. Only ENEDIS can validate offers.';
     }
     if (revertReason.includes('Internal JSON-RPC error')) {
       return 'Network error. Please try again with higher gas limit.';
@@ -124,12 +120,11 @@ function convertToOffer(offerResponse: OfferResponse, id: bigint): EnergyOffer {
     quantity: offerResponse[1],
     pricePerUnit: offerResponse[2],
     energyType: offerResponse[3],
-    timestamp: offerResponse[4],
-    isActive: offerResponse[5],
-    buyer: offerResponse[6],
-    isValidated: offerResponse[7],
-    isCompleted: offerResponse[8],
-    isPendingCreation: offerResponse[9]
+    isActive: offerResponse[4],
+    buyer: offerResponse[5],
+    isValidated: offerResponse[6],
+    isCompleted: offerResponse[7],
+    isPendingCreation: offerResponse[8]
   };
 }
 
@@ -164,31 +159,43 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const userManagementContract = useUserManagementContract();
 
   const fetchOffers = useCallback(async () => {
-    if (!publicClient || !isConnected) return;
+    if (!publicClient || !isConnected) {
+      console.log('fetchOffers: No publicClient or not connected');
+      return;
+    }
 
     try {
+      console.log('Starting fetchOffers...');
       const fetchedOffers: EnergyOffer[] = [];
       const batchSize = 50;  // Increased batch size for better initial load
       let consecutiveErrors = 0;
       let index = 0;
       
-      // Continue fetching until we hit 3 consecutive batches with all errors
       while (consecutiveErrors < 3 && index < 1000) {
+        console.log(`Fetching batch starting at index ${index}`);
         const promises = Array.from({ length: batchSize }, (_, i) => {
+          const currentIndex = index + i;
+          console.log(`Reading offer at index ${currentIndex}`);
           return publicClient.readContract({
             address: contractAddress,
             abi,
             functionName: 'offers',
-            args: [BigInt(index + i)],
-          }).then(response => ({
-            success: true,
-            data: response as OfferResponse,
-            index: index + i
-          })).catch(error => ({
-            success: false,
-            data: null,
-            index: index + i
-          }));
+            args: [BigInt(currentIndex)],
+          }).then(response => {
+            console.log(`Successfully read offer at index ${currentIndex}:`, response);
+            return {
+              success: true,
+              data: response as OfferResponse,
+              index: currentIndex
+            };
+          }).catch(error => {
+            console.log(`Failed to read offer at index ${currentIndex}:`, error);
+            return {
+              success: false,
+              data: null,
+              index: currentIndex
+            };
+          });
         });
 
         const results = await Promise.all(promises);
@@ -197,8 +204,15 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         for (const result of results) {
           if (result.success && result.data) {
             const offer = convertToOffer(result.data, BigInt(result.index));
-            // Include all offers that have a valid producer address
             if (offer.producer !== '0x0000000000000000000000000000000000000000') {
+              console.log(`Found valid offer at index ${result.index}:`, {
+                producer: offer.producer,
+                quantity: offer.quantity.toString(),
+                pricePerUnit: offer.pricePerUnit.toString(),
+                energyType: offer.energyType,
+                isActive: offer.isActive,
+                isPendingCreation: offer.isPendingCreation
+              });
               fetchedOffers.push(offer);
               validOffersInBatch++;
             }
@@ -208,7 +222,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         if (validOffersInBatch === 0) {
           consecutiveErrors++;
         } else {
-          consecutiveErrors = 0;  // Reset if we found valid offers
+          consecutiveErrors = 0;
         }
 
         index += batchSize;
@@ -216,7 +230,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
 
       console.log(`Fetched ${fetchedOffers.length} valid offers`);
       
-      // Sort offers by ID in descending order (newest first)
       fetchedOffers.sort((a, b) => Number(b.id - a.id));
       setOffers(fetchedOffers);
     } catch (error) {
@@ -224,31 +237,44 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   }, [publicClient, isConnected, contractAddress]);
 
-  // Remove debounce for direct fetchOffers calls
   const debouncedFetchOffers = useCallback(
     debounce(() => {
       fetchOffers();
-    }, 500), // Reduced debounce time
+    }, 500),
     [fetchOffers]
   );
 
-  // Separate effect for initial load and wallet connection
   useEffect(() => {
     if (isConnected && publicClient) {
       fetchOffers();
     }
   }, [isConnected, publicClient, fetchOffers]);
 
-  // Separate effect for event watching
   useEffect(() => {
     if (!publicClient) return;
   
     const handleOfferPurchased = async (log: any) => {
       console.log('OfferPurchased event received:', log);
-      await fetchOffers(); // Immediate fetch for purchase events
+      await fetchOffers();
+    };
+
+    const handleOfferCreated = async (log: any) => {
+      console.log('OfferCreated event received:', log);
+      try {
+        const decodedLog = decodeEventLog({
+          abi,
+          data: log[0].data,
+          topics: log[0].topics,
+        });
+        console.log('Decoded OfferCreated event:', decodedLog);
+      } catch (error) {
+        console.error('Error decoding OfferCreated event:', error);
+      }
+      await fetchOffers();
     };
   
     const handleOtherEvents = debounce(() => {
+      console.log('Other event received, fetching offers...');
       fetchOffers();
     }, 500);
   
@@ -263,7 +289,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         address: contractAddress,
         abi,
         eventName: 'OfferCreated',
-        onLogs: handleOtherEvents,
+        onLogs: handleOfferCreated,
       }),
       publicClient.watchContractEvent({
         address: contractAddress,
@@ -275,6 +301,12 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         address: contractAddress,
         abi,
         eventName: 'OfferCreationValidated',
+        onLogs: handleOtherEvents,
+      }),
+      publicClient.watchContractEvent({
+        address: contractAddress,
+        abi,
+        eventName: 'CommitmentSubmitted',
         onLogs: handleOtherEvents,
       })
     ];
@@ -320,7 +352,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       
       console.log('Current offers with buyers:', offersWithBuyers.map(offer => ({
         id: offer.id.toString(),
-        buyer: offer.buyer,
+        buyer: offer.buyer?.toLowerCase(),
         isPendingCreation: offer.isPendingCreation,
         isActive: offer.isActive,
         isCompleted: offer.isCompleted,
@@ -341,7 +373,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // Vérifier les rôles avant d'appeler le smart contract
       const formattedAddress = userAddress as `0x${string}`;
       console.log('Checking roles for address:', formattedAddress);
       
@@ -403,7 +434,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       });
       throw error;
     }
-};
+  };
 
   const handleRemoveUser = async (userAddress: string) => {
     if (!writeContractAsync || !isConnected) {
@@ -418,15 +449,15 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       });
 
       toast({
-        title: "Removing User",
-        description: "Please wait while the user is being removed...",
+        title: "Initiating User Removal",
+        description: "Please wait while the removal process is being initiated...",
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
 
       toast({
         title: "User Removed",
-        description: "Successfully removed user.",
+        description: "The user has been successfully removed.",
       });
     } catch (error) {
       console.error('Remove user error:', error);
@@ -444,35 +475,205 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       throw new Error('Please connect your wallet first');
     }
     try {
+      console.log('Starting offer creation with params:', {
+        quantity,
+        pricePerUnit,
+        energyType,
+        contractAddress
+      });
+
       const quantityWh = BigInt(Math.floor(quantity * 1000));
       const pricePerWhInMatic = pricePerUnit / 1000;
       const pricePerWhInWei = parseEther(pricePerWhInMatic.toString());
+
+      console.log('Converted values:', {
+        quantityWh: quantityWh.toString(),
+        pricePerWhInMatic,
+        pricePerWhInWei: pricePerWhInWei.toString()
+      });
+
+      console.log('Calling createOffer on contract...');
+      if (!publicClient) {
+        throw new Error('Public client not initialized');
+      }
+
+      // Get current gas price and add 20% buffer
+      const gasPrice = await publicClient.getGasPrice();
+      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
+
+      // Estimate gas with a 50% buffer
+      const gasEstimate = await publicClient.estimateContractGas({
+        address: contractAddress,
+        abi,
+        functionName: 'createOffer',
+        args: [quantityWh, pricePerWhInWei, energyType],
+        account: address as `0x${string}`,
+      });
+      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10);
+
+      console.log('Creating offer with parameters:', {
+        quantityWh: quantityWh.toString(),
+        pricePerWhInWei: pricePerWhInWei.toString(),
+        energyType,
+        gasLimit: bufferedGas.toString(),
+        gasPrice: bufferedGasPrice.toString()
+      });
 
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
         functionName: 'createOffer',
         args: [quantityWh, pricePerWhInWei, energyType],
+        gas: bufferedGas,
+        gasPrice: bufferedGasPrice,
       });
+
+      console.log('Transaction hash:', hash);
 
       toast({
         title: "Creating Offer",
         description: "Please wait while your offer is being created...",
       });
 
-      await publicClient?.waitForTransactionReceipt({ hash });
+      console.log('Waiting for transaction receipt...');
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      console.log('Transaction receipt:', receipt);
+
+      // Check for OfferCreated event
+      if (receipt) {
+        const offerCreatedEvents = receipt.logs
+          .map(log => {
+            try {
+              return decodeEventLog({
+                abi,
+                data: log.data,
+                topics: log.topics,
+              });
+            } catch {
+              return null;
+            }
+          })
+          .filter(event => event?.eventName === 'OfferCreated');
+
+        console.log('OfferCreated events:', offerCreatedEvents);
+      }
 
       toast({
         title: "Offer Created",
         description: "Your energy offer has been created and is pending Enedis validation.",
       });
 
-      // Immediately fetch offers after creating a new one
+      console.log('Refreshing offers list...');
       await fetchOffers();
+      console.log('Offers list refreshed');
     } catch (error) {
+      console.error('Create offer error details:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        cause: error instanceof Error ? error.cause : undefined
+      });
       console.error('Create offer error:', error);
       toast({
         title: "Failed to Create Offer",
+        description: parseContractError(error),
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleCommitToPurchase = async (commitment: `0x${string}`) => {
+    if (!writeContractAsync || !isConnected || !publicClient || !address) {
+      throw new Error('Please connect your wallet first');
+    }
+    try {
+      console.log('Committing to purchase with params:', {
+        commitment,
+        contractAddress,
+        connectedAddress: address
+      });
+
+      // Get current gas price and add 20% buffer
+      const gasPrice = await publicClient.getGasPrice();
+      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
+
+      // Estimate gas and add 50% buffer
+      // Use a fixed gas limit for commitToPurchase
+      const fixedGasLimit = BigInt(100000); // Fixed gas limit that should be sufficient
+
+      console.log('Transaction parameters:', {
+        gasPrice: bufferedGasPrice.toString(),
+        gasLimit: fixedGasLimit.toString()
+      });
+
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'commitToPurchase',
+        args: [commitment],
+        gas: fixedGasLimit,
+        gasPrice: bufferedGasPrice,
+      });
+
+      toast({
+        title: "Submitting Commitment",
+        description: "Please wait while your purchase commitment is being submitted...",
+      });
+
+      await publicClient?.waitForTransactionReceipt({ hash });
+
+      toast({
+        title: "Commitment Submitted",
+        description: "Your purchase commitment has been submitted successfully.",
+      });
+    } catch (error) {
+      console.error('Commit to purchase error:', error);
+      toast({
+        title: "Commitment Failed",
+        description: parseContractError(error),
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handlePurchaseOffer = async (offerId: bigint, totalPrice: bigint, secret: `0x${string}`) => {
+    if (!writeContractAsync || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+    try {
+      console.log('Purchasing offer:', {
+        offerId: offerId.toString(),
+        totalPrice: totalPrice.toString(),
+        secret
+      });
+  
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'purchaseOffer',
+        args: [offerId, secret],
+        value: totalPrice,
+      });
+  
+      toast({
+        title: "Processing Purchase",
+        description: "Please wait while your purchase is being processed...",
+      });
+  
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      console.log('Purchase transaction receipt:', receipt);
+  
+      toast({
+        title: "Purchase Successful",
+        description: "Your energy purchase has been completed.",
+      });
+  
+      await fetchOffers();
+    } catch (error) {
+      console.error('Purchase error:', error);
+      toast({
+        title: "Purchase Failed",
         description: parseContractError(error),
         variant: "destructive",
       });
@@ -492,11 +693,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         connectedAddress: address
       });
 
-      // Get the current gas price and add a buffer
       const gasPrice = await publicClient.getGasPrice();
-      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10); // Add 20% buffer
+      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
 
-      // Estimate gas with a buffer
       const gasEstimate = await publicClient.estimateContractGas({
         address: contractAddress,
         abi,
@@ -504,7 +703,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         args: [offerId, isValid],
         account: address,
       });
-      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10); // Add 50% buffer
+      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10);
 
       console.log('Transaction parameters:', {
         gasPrice: bufferedGasPrice.toString(),
@@ -525,10 +724,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         description: "Please wait while the offer creation is being validated...",
       });
 
-      // Wait for more confirmations on Polygon Amoy
       const receipt = await publicClient.waitForTransactionReceipt({ 
         hash,
-        confirmations: 3 // Wait for 3 confirmations
+        confirmations: 3
       });
 
       console.log('Transaction receipt:', receipt);
@@ -550,59 +748,65 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handlePurchaseOffer = async (offerId: bigint, totalPrice: bigint) => {
-    if (!writeContractAsync || !isConnected) {
-      throw new Error('Please connect your wallet first');
-    }
+  const hasEnedisRole = useCallback(async (userAddress: string): Promise<boolean> => {
+    if (!publicClient || !contractAddress) return false;
     try {
-      console.log('Purchasing offer:', {  // Add this
-        offerId: offerId.toString(),
-        totalPrice: totalPrice.toString()
-      });
-  
-      const hash = await writeContractAsync({
+      const ENEDIS_ROLE = await publicClient.readContract({
         address: contractAddress,
         abi,
-        functionName: 'purchaseOffer',
-        args: [offerId],
-        value: totalPrice,
-      });
-  
-      toast({
-        title: "Processing Purchase",
-        description: "Please wait while your purchase is being processed...",
-      });
-  
-      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
-      console.log('Purchase transaction receipt:', receipt);  // Add this
-  
-      toast({
-        title: "Purchase Successful",
-        description: "Your energy purchase has been completed.",
-      });
-  
-      await fetchOffers();
+        functionName: 'ENEDIS_ROLE',
+      }) as `0x${string}`;
+      
+      const hasRole = await publicClient.readContract({
+        address: contractAddress,
+        abi,
+        functionName: 'hasRole',
+        args: [ENEDIS_ROLE, userAddress as `0x${string}`],
+      }) as boolean;
+      
+      return hasRole;
     } catch (error) {
-      console.error('Purchase error:', error);
-      toast({
-        title: "Purchase Failed",
-        description: parseContractError(error),
-        variant: "destructive",
-      });
-      throw error;
+      console.error("Failed to check ENEDIS role:", error);
+      return false;
     }
-  };
+  }, [publicClient, contractAddress]);
 
   const handleValidateDelivery = async (offerId: bigint, isValid: boolean) => {
-    if (!writeContractAsync || !isConnected) {
+    if (!writeContractAsync || !isConnected || !publicClient || !address) {
       throw new Error('Please connect your wallet first');
     }
     try {
+      console.log('Validating delivery with params:', {
+        offerId: offerId.toString(),
+        isValid,
+        contractAddress,
+        connectedAddress: address
+      });
+
+      const gasPrice = await publicClient.getGasPrice();
+      const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
+
+      const gasEstimate = await publicClient.estimateContractGas({
+        address: contractAddress,
+        abi,
+        functionName: 'validateAndDistribute',
+        args: [offerId, isValid],
+        account: address,
+      });
+      const bufferedGas = gasEstimate * BigInt(15) / BigInt(10);
+
+      console.log('Transaction parameters:', {
+        gasPrice: bufferedGasPrice.toString(),
+        gasLimit: bufferedGas.toString()
+      });
+
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
         functionName: 'validateAndDistribute',
         args: [offerId, isValid],
+        gas: bufferedGas,
+        gasPrice: bufferedGasPrice,
       });
 
       toast({
@@ -629,52 +833,17 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleCancelExpiredOffer = async (offerId: bigint) => {
-    if (!writeContractAsync || !isConnected) {
-      throw new Error('Please connect your wallet first');
-    }
-    try {
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi,
-        functionName: 'cancelExpiredOffer',
-        args: [offerId],
-      });
-
-      toast({
-        title: "Cancelling Expired Offer",
-        description: "Please wait while the expired offer is being cancelled...",
-      });
-
-      await publicClient?.waitForTransactionReceipt({ hash });
-
-      toast({
-        title: "Expired Offer Cancelled",
-        description: "The expired offer has been successfully cancelled and funds returned.",
-      });
-
-      await fetchOffers();
-    } catch (error) {
-      console.error('Cancel expired offer error:', error);
-      toast({
-        title: "Cancellation Failed",
-        description: parseContractError(error),
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
   const value = {
     currentUser: currentUserState,
     offers,
     addUser: handleAddUser,
     removeUser: handleRemoveUser,
     createOffer: handleCreateOffer,
+    commitToPurchase: handleCommitToPurchase,
     purchaseOffer: handlePurchaseOffer,
     validateDelivery: handleValidateDelivery,
     validateOfferCreation: handleValidateOfferCreation,
-    cancelExpiredOffer: handleCancelExpiredOffer,
+    hasEnedisRole,
   };
 
   return (

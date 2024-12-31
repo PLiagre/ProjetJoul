@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from '../lib/wagmi-config'
 import { EnergyExchangeProvider } from '../contexts/energy-exchange-provider'
 import { UserManagementProvider } from '../contexts/user-management-provider'
+import { VotingProvider } from '../contexts/voting-provider'
 import { Toaster } from '../components/ui/toaster'
 import '@rainbow-me/rainbowkit/styles.css'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
@@ -24,10 +25,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
           overlayBlur: 'small',
         })}>
           <UserManagementProvider>
-            <EnergyExchangeProvider>
-              {children}
-              <Toaster />
-            </EnergyExchangeProvider>
+            <VotingProvider>
+              <EnergyExchangeProvider>
+                {children}
+                <Toaster />
+              </EnergyExchangeProvider>
+            </VotingProvider>
           </UserManagementProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

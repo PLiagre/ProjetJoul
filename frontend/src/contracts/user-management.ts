@@ -1,6 +1,8 @@
 import { useContractAddresses } from '../hooks/useContractAddresses';
 import { keccak256, stringToHex } from 'viem';
 
+export const GRACE_PERIOD = 24 * 60 * 60; // 24 hours in seconds
+
 export const abi = [
   {
     "inputs": [],
@@ -96,6 +98,12 @@ export const abi = [
         "internalType": "bool",
         "name": "isProducer",
         "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "isConsumer",
+        "type": "bool"
       }
     ],
     "name": "UserAdded",
@@ -112,6 +120,38 @@ export const abi = [
       }
     ],
     "name": "UserRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "effectiveTime",
+        "type": "uint256"
+      }
+    ],
+    "name": "UserRemovalInitiated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      }
+    ],
+    "name": "UserRemovalCancelled",
     "type": "event"
   },
   {
@@ -155,6 +195,19 @@ export const abi = [
   },
   {
     "inputs": [],
+    "name": "GRACE_PERIOD",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "PRODUCER_ROLE",
     "outputs": [
       {
@@ -180,6 +233,32 @@ export const abi = [
       }
     ],
     "name": "addUser",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      }
+    ],
+    "name": "cancelUserRemoval",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      }
+    ],
+    "name": "finalizeUserRemoval",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -253,6 +332,19 @@ export const abi = [
         "type": "address"
       }
     ],
+    "name": "initiateUserRemoval",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      }
+    ],
     "name": "isConsumer",
     "outputs": [
       {
@@ -301,19 +393,6 @@ export const abi = [
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "userAddress",
-        "type": "address"
-      }
-    ],
-    "name": "removeUser",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -376,6 +455,25 @@ export const abi = [
     "name": "unpause",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "removalTimestamp",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ] as const;
