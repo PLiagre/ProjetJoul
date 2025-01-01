@@ -29,6 +29,10 @@ const config: HardhatUserConfig = {
       url: "https://rpc-amoy.polygon.technology",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 80002,  // Correction du chainId pour Polygon Amoy
+      gas: 5000000,
+      gasMultiplier: 2,
+      blockGasLimit: 30000000,
+      timeout: 60000
     },
     sepolia: {
       url: "https://rpc.sepolia.org",

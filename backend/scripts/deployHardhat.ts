@@ -28,16 +28,7 @@ async function main() {
     const joulTokenAddress = await joulToken.getAddress();
     console.log("JoulToken deployed to:", joulTokenAddress);
 
-    // 2. Déploiement du EnergyNFT
-    console.log("\nDeploying EnergyNFT...");
-    // @ts-ignore
-    const EnergyNFT = await hre.ethers.getContractFactory("EnergyNFT");
-    const energyNFT = await EnergyNFT.deploy();
-    await energyNFT.waitForDeployment();
-    const energyNFTAddress = await energyNFT.getAddress();
-    console.log("EnergyNFT deployed to:", energyNFTAddress);
-
-    // 3. Déploiement du UserManagement
+    // 2. Déploiement du UserManagement
     console.log("\nDeploying UserManagement...");
     // @ts-ignore
     const UserManagement = await hre.ethers.getContractFactory("UserManagement");
@@ -45,6 +36,15 @@ async function main() {
     await userManagement.waitForDeployment();
     const userManagementAddress = await userManagement.getAddress();
     console.log("UserManagement deployed to:", userManagementAddress);
+
+    // 3. Déploiement du EnergyNFT
+    console.log("\nDeploying EnergyNFT...");
+    // @ts-ignore
+    const EnergyNFT = await hre.ethers.getContractFactory("EnergyNFT");
+    const energyNFT = await EnergyNFT.deploy();
+    await energyNFT.waitForDeployment();
+    const energyNFTAddress = await energyNFT.getAddress();
+    console.log("EnergyNFT deployed to:", energyNFTAddress);
 
     // 4. Déploiement du EnergyExchange
     console.log("\nDeploying EnergyExchange...");
@@ -70,6 +70,18 @@ async function main() {
       const energyExchangeAddress = await energyExchange.getAddress();
       console.log("EnergyExchange deployed to:", energyExchangeAddress);
 
+      // Donner le DEFAULT_ADMIN_ROLE au déployeur sur EnergyNFT
+      const NFT_DEFAULT_ADMIN_ROLE = await energyNFT.DEFAULT_ADMIN_ROLE();
+      const nftAdminTx = await energyNFT.grantRole(NFT_DEFAULT_ADMIN_ROLE, deployer.address);
+      await nftAdminTx.wait();
+      console.log("Granted DEFAULT_ADMIN_ROLE to deployer for EnergyNFT");
+
+      // Donner le MINTER_ROLE à EnergyExchange pour EnergyNFT
+      const NFT_MINTER_ROLE = await energyNFT.MINTER_ROLE();
+      const nftMintTx = await energyNFT.grantRole(NFT_MINTER_ROLE, energyExchangeAddress);
+      await nftMintTx.wait();
+      console.log("Granted MINTER_ROLE to EnergyExchange for EnergyNFT");
+
       // 5. Déploiement du JoulVoting
       console.log("\nDeploying JoulVoting...");
       // @ts-ignore
@@ -87,12 +99,6 @@ async function main() {
       const mintTx = await joulToken.grantRole(MINTER_ROLE, energyExchangeAddress);
       await mintTx.wait();
       console.log("Granted MINTER_ROLE to EnergyExchange for JoulToken");
-
-      // Donner le rôle MINTER à EnergyExchange pour EnergyNFT
-      const NFT_MINTER_ROLE = await energyNFT.MINTER_ROLE();
-      const nftMintTx = await energyNFT.grantRole(NFT_MINTER_ROLE, energyExchangeAddress);
-      await nftMintTx.wait();
-      console.log("Granted MINTER_ROLE to EnergyExchange for EnergyNFT");
 
       // Donner le rôle ADMIN à EnergyExchange pour UserManagement
       const USER_MANAGEMENT_ADMIN_ROLE = await userManagement.ADMIN_ROLE();

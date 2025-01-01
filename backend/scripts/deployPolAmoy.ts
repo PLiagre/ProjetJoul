@@ -71,6 +71,12 @@ async function main() {
       const energyExchangeAddress = await energyExchange.getAddress();
       console.log("EnergyExchange deployed to:", energyExchangeAddress);
 
+      // Donner le DEFAULT_ADMIN_ROLE au déployeur sur EnergyNFT
+      const NFT_DEFAULT_ADMIN_ROLE = await energyNFT.DEFAULT_ADMIN_ROLE();
+      const nftAdminTx = await energyNFT.grantRole(NFT_DEFAULT_ADMIN_ROLE, deployer.address);
+      await nftAdminTx.wait();
+      console.log("Granted DEFAULT_ADMIN_ROLE to deployer for EnergyNFT");
+
       // 5. Déploiement du JoulVoting
       console.log("\nDeploying JoulVoting...");
       // @ts-ignore

@@ -50,6 +50,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         bool isValidated;
         bool isCompleted;
         bool isPendingCreation;
+        string ipfsUri;       // URI IPFS pour les métadonnées du NFT
     }
 
     mapping(uint256 => EnergyOffer) public offers;
@@ -180,7 +181,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             buyer: address(0),
             isValidated: false,
             isCompleted: false,
-            isPendingCreation: true
+            isPendingCreation: true,
+            ipfsUri: ""
         });
 
         emit OfferCreated(
@@ -194,12 +196,14 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         return offerId;
     }
 
-    function validateOfferCreation(uint256 offerId, bool isValid) 
+    function validateOfferCreation(uint256 offerId, bool isValid, string memory ipfsUri) 
         external 
         onlyRole(ENEDIS_ROLE) 
         whenNotPaused 
     {
+        require(bytes(ipfsUri).length > 0, "IPFS URI cannot be empty");
         EnergyOffer storage offer = offers[offerId];
+        offer.ipfsUri = ipfsUri;
         require(offer.isPendingCreation, "Offer not pending creation");
         require(!offer.isActive, "Offer already active");
 
@@ -423,15 +427,18 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             revert("Purchase reward minting failed with low-level error");
         }
 
-/*
-        string memory uri = _generateTokenURI(offerId);
-        energyNFT.mintCertificate(
+        // Mint NFT certificate for the completed transaction
+        try energyNFT.mintCertificate(
             offer.buyer,
             offer.quantity,
             offer.energyType,
-            uri
-        );
-*/
+            offer.ipfsUri
+        ) {
+            console.log("NFT certificate minted successfully");
+        } catch Error(string memory reason) {
+            console.log("NFT minting failed with Error:", reason);
+            revert(string(abi.encodePacked("NFT minting failed: ", reason)));
+        }
         emit FeesDistributed(
             offerId,
             producerAmount,
