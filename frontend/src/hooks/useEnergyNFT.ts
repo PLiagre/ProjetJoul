@@ -45,9 +45,30 @@ export function useEnergyNFT() {
     return hash;
   };
 
+  const mintCertificate = async (
+    to: `0x${string}`,
+    quantity: bigint,
+    energyType: string,
+    uri: string
+  ) => {
+    if (!writeContractAsync || !isConnected) {
+      throw new Error('Please connect your wallet first');
+    }
+
+    const hash = await writeContractAsync({
+      address: contractAddress,
+      abi,
+      functionName: 'mintCertificate',
+      args: [to, quantity, energyType, uri],
+    });
+
+    return hash;
+  };
+
   return {
     balance,
     approve,
     transferFrom,
+    mintCertificate,
   };
 }

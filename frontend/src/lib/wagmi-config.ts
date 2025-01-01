@@ -15,8 +15,20 @@ export const polygonAmoy = {
     symbol: 'POL',
   },
   rpcUrls: {
-    public: { http: ['https://rpc-amoy.polygon.technology'] },
-    default: { http: ['https://rpc-amoy.polygon.technology'] },
+    public: { 
+      http: [
+        'https://rpc-amoy.polygon.technology',
+        'https://polygon-amoy.blockpi.network/v1/rpc/public',
+        'https://polygon-amoy.public.blastapi.io'
+      ] 
+    },
+    default: { 
+      http: [
+        'https://rpc-amoy.polygon.technology',
+        'https://polygon-amoy.blockpi.network/v1/rpc/public',
+        'https://polygon-amoy.public.blastapi.io'
+      ] 
+    },
   },
   blockExplorers: {
     default: { name: 'PolygonScan', url: 'https://www.oklink.com/amoy' },
@@ -30,7 +42,12 @@ export const wagmiConfig = getDefaultConfig({
   chains: [polygonAmoy, hardhat, sepolia],
   ssr: true, // Enable server-side rendering support
   transports: {
-    [polygonAmoy.id]: http(polygonAmoy.rpcUrls.default.http[0]),
+    [polygonAmoy.id]: http(polygonAmoy.rpcUrls.default.http[0], {
+      batch: false,
+      retryCount: 3,
+      retryDelay: 1000,
+      timeout: 20000
+    }),
     [hardhat.id]: http('http://127.0.0.1:8545'),
     [sepolia.id]: http('https://rpc.sepolia.org')
   }

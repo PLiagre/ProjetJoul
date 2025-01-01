@@ -6,6 +6,7 @@ import { useToast } from '../components/ui/use-toast';
 import { useUserManagementContext } from './user-management-provider';
 import { useUserManagementContract } from '../contracts/user-management';
 import { getContractAddresses } from '../lib/wagmi-config';
+import { generateNFTMetadata, uploadToIPFS } from '../services/ipfs-service';
 
 interface EnergyOffer {
   id: bigint;
@@ -18,9 +19,10 @@ interface EnergyOffer {
   isValidated: boolean;
   isCompleted: boolean;
   isPendingCreation: boolean;
+  ipfsUri: string;
 }
 
-type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, boolean, `0x${string}`, boolean, boolean, boolean];
+type OfferResponse = readonly [`0x${string}`, bigint, bigint, string, boolean, `0x${string}`, boolean, boolean, boolean, string];
 
 interface User {
   address: `0x${string}`;
@@ -124,7 +126,8 @@ function convertToOffer(offerResponse: OfferResponse, id: bigint): EnergyOffer {
     buyer: offerResponse[5],
     isValidated: offerResponse[6],
     isCompleted: offerResponse[7],
-    isPendingCreation: offerResponse[8]
+    isPendingCreation: offerResponse[8],
+    ipfsUri: offerResponse[9]
   };
 }
 
@@ -693,6 +696,37 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         connectedAddress: address
       });
 
+      // Récupérer les données de l'offre
+      const offer = offers.find(o => o.id === offerId);
+      if (!offer) {
+        throw new Error('Offer not found');
+      }
+
+      // Si l'offre est valide, générer et uploader les métadonnées IPFS
+      let ipfsUri = '';
+      if (isValid) {
+        try {
+          const metadata = generateNFTMetadata(
+            offerId.toString(),
+            Number(offer.quantity),
+            offer.energyType,
+            offer.producer,
+            Math.floor(Date.now() / 1000)
+          );
+          ipfsUri = await uploadToIPFS(metadata);
+          console.log('IPFS URI generated:', ipfsUri);
+        } catch (error) {
+          console.error('Failed to generate IPFS URI:', error);
+          toast({
+            title: "IPFS Error",
+            description: "Failed to generate IPFS metadata. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      // Mettre à jour l'URI dans le contrat EnergyExchange
       const gasPrice = await publicClient.getGasPrice();
       const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
 
@@ -700,21 +734,22 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         address: contractAddress,
         abi,
         functionName: 'validateOfferCreation',
-        args: [offerId, isValid],
+        args: [offerId, isValid, ipfsUri],
         account: address,
       });
       const bufferedGas = gasEstimate * BigInt(15) / BigInt(10);
 
       console.log('Transaction parameters:', {
         gasPrice: bufferedGasPrice.toString(),
-        gasLimit: bufferedGas.toString()
+        gasLimit: bufferedGas.toString(),
+        ipfsUri
       });
 
       const hash = await writeContractAsync({
         address: contractAddress,
         abi,
         functionName: 'validateOfferCreation',
-        args: [offerId, isValid],
+        args: [offerId, isValid, ipfsUri],
         gas: bufferedGas,
         gasPrice: bufferedGasPrice,
       });

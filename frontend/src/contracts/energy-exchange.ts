@@ -139,6 +139,11 @@ export const abi = [
         "internalType": "bool",
         "name": "isValid",
         "type": "bool"
+      },
+      {
+        "internalType": "string",
+        "name": "ipfsUri",
+        "type": "string"
       }
     ],
     "name": "validateOfferCreation",
@@ -231,6 +236,11 @@ export const abi = [
         "internalType": "bool",
         "name": "isPendingCreation",
         "type": "bool"
+      },
+      {
+        "internalType": "string",
+        "name": "ipfsUri",
+        "type": "string"
       }
     ],
     "stateMutability": "view",
