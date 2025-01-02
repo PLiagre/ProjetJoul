@@ -1,6 +1,13 @@
 import { useAccount, useReadContract, useWriteContract, useChainId } from 'wagmi';
 import { getAddress, abi } from '../contracts/energy-nft';
 
+interface EnergyData {
+  quantity: bigint;
+  energyType: string;
+  timestamp: bigint;
+  producer: string;
+}
+
 export function useEnergyNFT() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -65,10 +72,35 @@ export function useEnergyNFT() {
     return hash;
   };
 
+  // Fonction pour obtenir l'URL OpenSea d'un NFT
+  const getOpenSeaURL = (tokenId: string | number) => {
+    // URL de base pour OpenSea testnet (Polygon Amoy)
+    const baseURL = "https://testnets.opensea.io/assets/amoy";
+    return `${baseURL}/${contractAddress}/${tokenId}`;
+  };
+
+  // Fonction pour obtenir l'URL de l'image selon le type d'énergie
+  const getEnergyTypeImage = (energyType: string): string => {
+    const normalizedType = energyType.toLowerCase();
+    const images: { [key: string]: string } = {
+      "solaire": "https://ipfs.io/ipfs/QmZNqPN3MNvHbW6gkUB4VH19mnCzDyUe1u933okCNbTgMD",
+      "eolien": "https://ipfs.io/ipfs/Qmdvy5wjzKZ3dchsdRWPbZZmRDvHtgkrjBQzxECNfDXBpt",
+      "hydraulique": "https://ipfs.io/ipfs/QmY2pjifFR5CQbE25LkGCztq3smM6SW8WQHuSfCiWHEFgP",
+      "biomasse": "https://ipfs.io/ipfs/Qmf7iRSjE6zkSeYiVXikosSFiDqHntFcBkEQmwpMVRNsQ6"
+    };
+    return images[normalizedType] || images["solaire"];
+  };
+
   return {
     balance,
     approve,
     transferFrom,
     mintCertificate,
+    getOpenSeaURL,
+    getEnergyTypeImage,
+    contractAddress,
+    abi,
   };
 }
+
+export type { EnergyData };

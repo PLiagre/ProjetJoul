@@ -40,25 +40,25 @@ export function VotingManagement() {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6 mb-8">
-      <h2 className="text-2xl font-bold mb-4 text-white">Voting Management</h2>
+    <div className="bg-gray-800 rounded-lg p-3">
+      <h2 className="text-xl font-bold mb-1.5 text-white">Voting Management</h2>
       
-      <div className="mb-6 space-y-4">
-        <div className="bg-gray-700 rounded-lg p-4">
-          <h3 className="text-xl font-bold text-white mb-4">Distribution Proposals</h3>
-          <div className="grid gap-4">
+      <div className="mb-3 space-y-1.5">
+        <div className="bg-gray-700 rounded-lg p-2">
+          <h3 className="text-sm font-bold text-white mb-1">Distribution Proposals</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             {proposals.map((proposal, index) => (
-              <div key={index} className={`p-3 rounded-lg ${winningProposalId !== null && Number(winningProposalId) === index ? 'bg-blue-900' : 'bg-gray-600'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-white font-bold">Proposal {index + 1}</span>
+              <div key={index} className="bg-[#225577] rounded-lg p-2">
+                <div className="text-center mb-1">
+                  <span className="text-white text-xs font-bold">Proposal {index + 1}</span>
                   {voteCounts[index] !== undefined && (
-                    <span className="text-gray-300">Votes: {voteCounts[index].toString()}</span>
+                    <div className="text-gray-300 text-xs">Votes: {voteCounts[index].toString()}</div>
                   )}
                   {winningProposalId !== null && Number(winningProposalId) === index && (
-                    <span className="text-green-400 font-bold">Winner</span>
+                    <div className="text-green-400 text-xs font-bold">Winner</div>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-white">
+                <div className="grid grid-cols-2 gap-1 text-white text-xs">
                   <p>Producer: {proposal.producerShare}%</p>
                   <p>Enedis: {proposal.enedisShare}%</p>
                   <p>Joul: {proposal.joulShare}%</p>
@@ -69,13 +69,13 @@ export function VotingManagement() {
           </div>
         </div>
 
-        <p className="text-white mb-2">Current Status: {getStatusText(workflowStatus)}</p>
-        
-        <div className="space-y-4">
+        <div className="flex flex-col items-center space-y-2">
+          <p className="text-white text-sm">Current Status: {getStatusText(workflowStatus)}</p>
+          
           {workflowStatus === 2 && (
             <button
               onClick={startVotingSession}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="px-4 py-1 bg-[#18ad65] text-white text-xs rounded hover:bg-[#18ad65]/80"
             >
               Start New Voting Session
             </button>
@@ -84,7 +84,7 @@ export function VotingManagement() {
           {workflowStatus === 0 && (
             <button
               onClick={endVotingSession}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="px-4 py-1 bg-[#18ad65] text-white text-xs rounded hover:bg-[#18ad65]/80"
             >
               End Voting Session
             </button>
@@ -93,7 +93,7 @@ export function VotingManagement() {
           {workflowStatus === 1 && (
             <button
               onClick={tallyVotes}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="px-4 py-1 bg-[#18ad65] text-white text-xs rounded hover:bg-[#18ad65]/80"
             >
               Tally Votes
             </button>
@@ -101,11 +101,11 @@ export function VotingManagement() {
         </div>
       </div>
 
-      <div className="bg-gray-700 rounded-lg p-4">
-        <h3 className="text-xl font-bold text-white mb-2">Voting Information</h3>
-        <div className="space-y-2 text-white">
-          <p>Required JOUL tokens to vote: {formatEther(VOTE_COST)} JOUL</p>
-          <p className="text-sm text-gray-400">Note: JOUL tokens used for voting will be burned</p>
+      <div className="bg-gray-700 rounded-lg p-2">
+        <h3 className="text-sm font-bold text-white mb-1">Voting Information</h3>
+        <div className="space-y-1 text-xs">
+          <p className="text-white">Required JOUL tokens to vote: {formatEther(VOTE_COST)} JOUL</p>
+          <p className="text-gray-400">Note: JOUL tokens used for voting will be burned</p>
         </div>
       </div>
     </div>

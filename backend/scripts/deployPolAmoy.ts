@@ -157,7 +157,7 @@ async function main() {
       console.log(`Granted DEFAULT_ADMIN_ROLE to second admin on EnergyExchange: ${secondAdmin}`);
 
       // Troisième admin
-      const thirdAdmin = "0x3F52a5dde225089750378E41aa2e7c635D95bDAB";
+      const thirdAdmin = "0x4d6371994557c161B3133BE641C4Fa013169522d";
       const thirdAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, thirdAdmin);
       await thirdAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to third admin: ${thirdAdmin}`);

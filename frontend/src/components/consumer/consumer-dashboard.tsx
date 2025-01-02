@@ -11,9 +11,9 @@ import { useState, useCallback } from "react";
 export function ConsumerDashboard() {
   const { address } = useAccount();
   const { offers, currentUser, commitToPurchase, purchaseOffer } = useEnergyExchange();
-  const [pendingPurchases, setPendingPurchases] = useState<{[key: string]: { secret: `0x${string}`, totalPrice: string }}>({});
+  const [pendingPurchases, setPendingPurchases] = useState<{[key: string]: { secret: `0x${string}`, totalPricePol: string }}>({});
 
-  const { data: maticBalance } = useBalance({
+  const { data: polBalance } = useBalance({
     address: address,
   });
 
@@ -26,7 +26,7 @@ export function ConsumerDashboard() {
   if (!address) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <h1 className="text-2xl font-bold mb-4">Please connect your wallet</h1>
+        <h1 className="text-2xl font-bold mb-4">Veuillez connecter votre portefeuille</h1>
       </div>
     );
   }
@@ -34,8 +34,8 @@ export function ConsumerDashboard() {
   if (currentUser?.isProducer) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <h1 className="text-2xl font-bold mb-4">Access Restricted</h1>
-        <p className="text-gray-400">Producers cannot access the consumer dashboard.</p>
+        <h1 className="text-2xl font-bold mb-4">Accès Restreint</h1>
+        <p className="text-gray-400">Les producteurs ne peuvent pas accéder au tableau de bord consommateur.</p>
       </div>
     );
   }
@@ -45,7 +45,7 @@ export function ConsumerDashboard() {
     return (Number(whQuantity) / 1000).toFixed(0);
   };
 
-  // Format price from wei/Wh to MATIC/kWh
+  // Convertit le prix de wei/Wh en POL/kWh
   const formatPrice = (weiPerWh: bigint) => {
     const weiPerKwh = weiPerWh * BigInt(1000);
     return formatEther(weiPerKwh);
@@ -64,7 +64,7 @@ export function ConsumerDashboard() {
     return { secret, commitment };
   }, []);
 
-  const handleInitiatePurchase = async (offerId: bigint, totalPriceInMatic: string) => {
+  const handleInitiatePurchase = async (offerId: bigint, totalPriceInPol: string) => {
     try {
       const { secret, commitment } = generateSecretAndCommitment();
       
@@ -74,10 +74,10 @@ export function ConsumerDashboard() {
       // Store secret and price for the actual purchase
       setPendingPurchases(prev => ({
         ...prev,
-        [offerId.toString()]: { secret, totalPrice: totalPriceInMatic }
+        [offerId.toString()]: { secret, totalPricePol: totalPriceInPol }
       }));
     } catch (error) {
-      console.error("Error initiating purchase:", error);
+      console.error("Erreur lors de l'initiation de l'achat:", error);
     }
   };
 
@@ -85,10 +85,10 @@ export function ConsumerDashboard() {
     try {
       const purchaseInfo = pendingPurchases[offerId.toString()];
       if (!purchaseInfo) {
-        throw new Error("No pending purchase found");
+        throw new Error("Aucun achat en attente trouvé");
       }
 
-      const totalPriceInWei = parseEther(purchaseInfo.totalPrice);
+      const totalPriceInWei = parseEther(purchaseInfo.totalPricePol);
       await purchaseOffer(offerId, totalPriceInWei, purchaseInfo.secret);
       
       // Clear the pending purchase
@@ -98,7 +98,7 @@ export function ConsumerDashboard() {
         return newState;
       });
     } catch (error) {
-      console.error("Error completing purchase:", error);
+      console.error("Erreur lors de la finalisation de l'achat:", error);
     }
   };
 
@@ -124,104 +124,144 @@ export function ConsumerDashboard() {
   );
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Consumer Dashboard</h1>
+    <div className="min-h-screen bg-gray-900">
+      {/* Banner Section - Reduced height from h-72 to h-60 */}
+      <div className="w-full h-60 relative mb-8 bg-[#225577]">
+        <img 
+          src="/images/JoulLogo.png" 
+          alt="Joul Banner" 
+          className="w-full h-full object-contain object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-900"></div>
+      </div>
 
-        {/* Balances Section */}
-        <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">Balances</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 mb-2">MATIC Balance</p>
-              <p className="text-white text-xl font-semibold">{maticBalance?.formatted || "0"} MATIC</p>
-            </div>
-            <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 mb-2 flex items-center">
-                JOUL Balance
-                <span className="ml-2 text-xs bg-gray-600 px-2 py-1 rounded" title="JOUL tokens are rewards for validated energy transactions. You receive 0.5 JOUL for each validated purchase.">
-                  ?
-                </span>
-              </p>
-              <p className="text-white text-xl font-semibold">{formattedJoulBalance} JOUL</p>
+      <div className="container mx-auto p-4">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl font-bold mb-8 text-white">Tableau de Bord Consommateur</h1>
+
+          {/* Balances Section */}
+          <div className="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">Soldes</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-[#225577] rounded-lg p-4">
+                <p className="text-gray-300 mb-2 font-medium">Solde POL</p>
+                <p className="text-2xl font-semibold text-white">{polBalance?.formatted || "0"} POL</p>
+              </div>
+              <div className="bg-[#225577] rounded-lg p-4">
+                <p className="text-gray-300 mb-2 font-medium">Solde JOUL</p>
+                <p className="text-2xl font-semibold text-white">{formattedJoulBalance} JOUL</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Voting Section */}
-        <div className="mb-8">
-          <VotingComponent />
-        </div>
+          {/* Main Grid Layout */}
+          <div className="grid grid-cols-2 gap-8 mb-8">
+            {/* Left Column - Available Offers */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h2 className="text-2xl font-bold mb-4 text-white">Offres d'Énergie Disponibles</h2>
+              <div className="space-y-4">
+                {activeOffers.map((offer) => {
+                  const totalPriceInPol = formatEther(offer.pricePerUnit * offer.quantity);
+                  const isPending = pendingPurchases[offer.id.toString()];
+                  
+                  return (
+                    <div key={offer.id.toString()} className="bg-[#225577] rounded-lg p-4">
+                      <div className="grid grid-cols-2 gap-2 text-gray-300 mb-4">
+                        <p>Producteur: {offer.producer}</p>
+                        <p>Type d'Énergie: {offer.energyType}</p>
+                        <p>Quantité: {formatQuantity(offer.quantity)} kWh</p>
+                        <p>Prix par kWh: {formatPrice(offer.pricePerUnit)} POL</p>
+                        <p className="col-span-2">Prix Total: {totalPriceInPol} POL</p>
+                      </div>
+                      {!isPending ? (
+                        <button
+                          onClick={() => handleInitiatePurchase(offer.id, totalPriceInPol)}
+                          className="w-full px-4 py-2 bg-[#18ad65] text-white rounded hover:bg-[#18ad65]/80 transition-colors"
+                        >
+                          Initier l'Achat
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleCompletePurchase(offer.id)}
+                          className="w-full px-4 py-2 bg-[#18ad65] text-white rounded hover:bg-[#18ad65]/80 transition-colors"
+                        >
+                          Finaliser l'Achat
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-        {/* Available Offers Section */}
-        <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">Available Energy Offers</h2>
-          <div className="space-y-4">
-            {activeOffers.map((offer) => {
-              // Calculate total price in MATIC
-              const totalPriceInMatic = formatEther(offer.pricePerUnit * offer.quantity);
-              const isPending = pendingPurchases[offer.id.toString()];
-              
-              return (
-                <div
-                  key={offer.id.toString()}
-                  className="bg-gray-700 rounded-lg p-4"
-                >
-                  <div className="grid grid-cols-2 gap-2 text-white mb-4">
-                    <p>Producer: {offer.producer}</p>
-                    <p>Energy Type: {offer.energyType}</p>
-                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
-                    <p className="col-span-2">
-                      Total Price: {totalPriceInMatic} MATIC
-                    </p>
-                  </div>
-                  {!isPending ? (
-                    <button
-                      onClick={() => handleInitiatePurchase(offer.id, totalPriceInMatic)}
-                      className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                    >
-                      Initiate Purchase
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleCompletePurchase(offer.id)}
-                      className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                    >
-                      Complete Purchase
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {activeOffers.length === 0 && (
-              <p className="text-gray-400">No energy offers available</p>
-            )}
-          </div>
-        </div>
-
-        {/* Purchase History Section */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-2xl font-bold mb-4 text-white">Purchase History</h2>
-          <div className="space-y-4">
-            {userPurchases.map((offer) => (
-              <div
-                key={offer.id.toString()}
-                className="bg-gray-700 rounded-lg p-4"
-              >
-                <div className="grid grid-cols-2 gap-2 text-white">
-                  <p>Producer: {offer.producer}</p>
-                  <p>Energy Type: {offer.energyType}</p>
-                  <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                  <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
-                  <p>Status: {offer.isValidated ? "Validated" : offer.isCompleted ? "Rejected" : "Pending"}</p>
-                  <p>Total Price: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC</p>
+            {/* Right Column - Stacked Sections */}
+            <div className="space-y-8">
+              {/* Pending Purchases */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-2xl font-bold mb-4 text-white">Achats en Attente</h2>
+                <div className="space-y-4">
+                  {userPurchases
+                    .filter(offer => !offer.isValidated && !offer.isCompleted)
+                    .map((offer) => (
+                      <div key={offer.id.toString()} className="bg-[#225577] rounded-lg p-4">
+                        <div className="grid grid-cols-2 gap-2 text-gray-300">
+                          <p>Producteur: {offer.producer}</p>
+                          <p>Type d'Énergie: {offer.energyType}</p>
+                          <p>Quantité: {formatQuantity(offer.quantity)} kWh</p>
+                          <p>Prix par kWh: {formatPrice(offer.pricePerUnit)} POL</p>
+                          <p>Statut: {offer.isValidated ? "Validé" : offer.isCompleted ? "Rejeté" : "En Attente"}</p>
+                          <p>Prix Total: {formatEther(offer.pricePerUnit * offer.quantity)} POL</p>
+                        </div>
+                      </div>
+                    ))}
                 </div>
               </div>
-            ))}
-            {userPurchases.length === 0 && (
-              <p className="text-gray-400">No purchase history</p>
-            )}
+
+              {/* Active Purchases */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-2xl font-bold mb-4 text-white">Achats Actifs</h2>
+                <div className="space-y-4">
+                  {userPurchases
+                    .filter(offer => offer.isValidated)
+                    .map((offer) => (
+                      <div key={offer.id.toString()} className="bg-[#225577] rounded-lg p-4">
+                        <div className="grid grid-cols-2 gap-2 text-gray-300">
+                          <p>Producteur: {offer.producer}</p>
+                          <p>Type d'Énergie: {offer.energyType}</p>
+                          <p>Quantité: {formatQuantity(offer.quantity)} kWh</p>
+                          <p>Prix par kWh: {formatPrice(offer.pricePerUnit)} POL</p>
+                          <p>Statut: {offer.isValidated ? "Validé" : offer.isCompleted ? "Rejeté" : "En Attente"}</p>
+                          <p>Prix Total: {formatEther(offer.pricePerUnit * offer.quantity)} POL</p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Voting Section */}
+          <div className="mb-8">
+            <VotingComponent />
+          </div>
+
+          {/* Purchase History */}
+          <div className="bg-gray-800 rounded-lg p-6">
+            <h2 className="text-2xl font-bold mb-4 text-white">Historique des Achats</h2>
+            <div className="space-y-4">
+              {userPurchases.map((offer) => (
+                <div key={offer.id.toString()} className="bg-[#225577] rounded-lg p-4">
+                  <div className="grid grid-cols-2 gap-2 text-gray-300">
+                    <p>Producteur: {offer.producer}</p>
+                    <p>Type d'Énergie: {offer.energyType}</p>
+                    <p>Quantité: {formatQuantity(offer.quantity)} kWh</p>
+                    <p>Prix par kWh: {formatPrice(offer.pricePerUnit)} POL</p>
+                    <p>Statut: {offer.isValidated ? "Validé" : offer.isCompleted ? "Rejeté" : "En Attente"}</p>
+                    <p>Prix Total: {formatEther(offer.pricePerUnit * offer.quantity)} POL</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
