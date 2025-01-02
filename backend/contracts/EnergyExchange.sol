@@ -427,14 +427,14 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             revert("Purchase reward minting failed with low-level error");
         }
 
-        // Mint NFT certificate for the completed transaction
+        // Mint NFT certificate for the completed transaction to the producer
         try energyNFT.mintCertificate(
-            offer.buyer,
+            offer.producer,
             offer.quantity,
             offer.energyType,
             offer.ipfsUri
         ) {
-            console.log("NFT certificate minted successfully");
+            console.log("NFT certificate minted successfully to producer");
         } catch Error(string memory reason) {
             console.log("NFT minting failed with Error:", reason);
             revert(string(abi.encodePacked("NFT minting failed: ", reason)));

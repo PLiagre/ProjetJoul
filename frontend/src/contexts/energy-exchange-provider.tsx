@@ -175,17 +175,14 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       let index = 0;
       
       while (consecutiveErrors < 3 && index < 1000) {
-        console.log(`Fetching batch starting at index ${index}`);
         const promises = Array.from({ length: batchSize }, (_, i) => {
           const currentIndex = index + i;
-          console.log(`Reading offer at index ${currentIndex}`);
           return publicClient.readContract({
             address: contractAddress,
             abi,
             functionName: 'offers',
             args: [BigInt(currentIndex)],
           }).then(response => {
-            console.log(`Successfully read offer at index ${currentIndex}:`, response);
             return {
               success: true,
               data: response as OfferResponse,
@@ -232,7 +229,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       }
 
       console.log(`Fetched ${fetchedOffers.length} valid offers`);
-      
+      +
       fetchedOffers.sort((a, b) => Number(b.id - a.id));
       setOffers(fetchedOffers);
     } catch (error) {

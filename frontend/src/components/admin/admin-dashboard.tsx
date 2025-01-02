@@ -22,7 +22,7 @@ export function AdminDashboard() {
   if (!isConnected || !address) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <h1 className="text-2xl font-bold mb-4">Please connect your wallet</h1>
+        <h1 className="text-2xl font-bold mb-4">Veuillez connecter votre portefeuille</h1>
       </div>
     );
   }
@@ -44,15 +44,15 @@ export function AdminDashboard() {
   if (!currentUser?.isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-        <p className="text-gray-400">You need admin privileges to access this page.</p>
+        <h1 className="text-2xl font-bold mb-4">Accès Refusé</h1>
+        <p className="text-gray-400">Vous avez besoin des privilèges administrateur pour accéder à cette page.</p>
       </div>
     );
   }
 
   const validateAddress = (address: string): string => {
     if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-      throw new Error("Invalid Ethereum address format");
+      throw new Error("Format d'adresse Ethereum invalide");
     }
     return address.toLowerCase();
   };
@@ -69,14 +69,14 @@ export function AdminDashboard() {
       setIsProducer(false);
       
       toast({
-        title: "Success",
-        description: `User ${checksummedAddress} has been ${isProducer ? 'added as producer' : 'added as consumer'}.`,
+        title: "Succès",
+        description: `L'utilisateur ${checksummedAddress} a été ${isProducer ? 'ajouté comme producteur' : 'ajouté comme consommateur'}.`,
       });
     } catch (error: any) {
-      console.error("Failed to add user:", error);
+      console.error("Échec de l'ajout de l'utilisateur:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to add user. Please try again.",
+        title: "Erreur",
+        description: error.message || "Échec de l'ajout de l'utilisateur. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -91,14 +91,14 @@ export function AdminDashboard() {
       await initiateUserRemoval(checksummedAddress);
       
       toast({
-        title: "Removal Initiated",
-        description: `User removal process started for ${checksummedAddress}. The removal will be effective after ${GRACE_PERIOD / 3600} hours.`,
+        title: "Suppression Initiée",
+        description: `Processus de suppression démarré pour ${checksummedAddress}. La suppression sera effective après ${GRACE_PERIOD / 3600} heures.`,
       });
     } catch (error: any) {
-      console.error("Failed to initiate user removal:", error);
+      console.error("Échec de l'initiation de la suppression:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to initiate user removal. Please try again.",
+        title: "Erreur",
+        description: error.message || "Échec de l'initiation de la suppression. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -113,15 +113,15 @@ export function AdminDashboard() {
       await cancelUserRemoval(checksummedAddress);
       
       toast({
-        title: "Removal Cancelled",
-        description: `User removal process cancelled for ${checksummedAddress}.`,
+        title: "Suppression Annulée",
+        description: `Processus de suppression annulé pour ${checksummedAddress}.`,
       });
       setRemovalAddress("");
     } catch (error: any) {
-      console.error("Failed to cancel user removal:", error);
+      console.error("Échec de l'annulation de la suppression:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to cancel user removal. Please try again.",
+        title: "Erreur",
+        description: error.message || "Échec de l'annulation de la suppression. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -136,15 +136,15 @@ export function AdminDashboard() {
       await finalizeUserRemoval(checksummedAddress);
       
       toast({
-        title: "Removal Finalized",
-        description: `User ${checksummedAddress} has been successfully removed.`,
+        title: "Suppression Finalisée",
+        description: `L'utilisateur ${checksummedAddress} a été supprimé avec succès.`,
       });
       setRemovalAddress("");
     } catch (error: any) {
-      console.error("Failed to finalize user removal:", error);
+      console.error("Échec de la finalisation de la suppression:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to finalize user removal. Please try again.",
+        title: "Erreur",
+        description: error.message || "Échec de la finalisation de la suppression. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -155,7 +155,7 @@ export function AdminDashboard() {
     return (Number(whQuantity) / 1000).toFixed(0);
   };
 
-  // Format price from wei/Wh to MATIC/kWh
+  // Format price from wei/Wh to POL/kWh
   const formatPrice = (weiPerWh: bigint) => {
     const weiPerKwh = weiPerWh * BigInt(1000);
     return formatEther(weiPerKwh);
@@ -165,14 +165,14 @@ export function AdminDashboard() {
     try {
       await validateDelivery(offerId, isValid);
       toast({
-        title: "Success",
-        description: `Energy transfer has been ${isValid ? 'validated' : 'rejected'}.`,
+        title: "Succès",
+        description: `Le transfert d'énergie a été ${isValid ? 'validé' : 'rejeté'}.`,
       });
     } catch (error: any) {
-      console.error("Failed to validate delivery:", error);
+      console.error("Échec de la validation de la livraison:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to validate delivery. Please try again.",
+        title: "Erreur",
+        description: error.message || "Échec de la validation de la livraison. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -182,14 +182,14 @@ export function AdminDashboard() {
     try {
       await validateOfferCreation(offerId, isValid);
       toast({
-        title: "Success",
-        description: `Energy offer creation has been ${isValid ? 'validated' : 'rejected'}.`,
+        title: "Succès",
+        description: `La création de l'offre d'énergie a été ${isValid ? 'validée' : 'rejetée'}.`,
       });
     } catch (error: any) {
-      console.error("Failed to validate offer creation:", error);
+      console.error("Échec de la validation de l'offre:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to validate offer creation. Please try again.",
+        title: "Erreur",
+        description: error.message || "Échec de la validation de l'offre. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -211,205 +211,209 @@ export function AdminDashboard() {
   });
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Admin Dashboard (ENEDIS)</h1>
+    <div className="min-h-screen bg-gray-900">
+      {/* Banner Section */}
+      <div className="w-full h-60 relative mb-8 bg-[#225577]">
+        <img 
+          src="/images/JoulLogo.png" 
+          alt="Joul Banner" 
+          className="w-full h-full object-contain object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-900"></div>
+      </div>
 
-        {/* Voting Management Section */}
-        <VotingManagement />
+      <div className="container mx-auto p-4">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl font-bold mb-8 text-white">Tableau de Bord JOUL</h1>
 
-        {/* Pending Offer Creations Section - Only visible to ENEDIS role */}
-        {hasEnedis && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-8">
-            <h2 className="text-2xl font-bold mb-4 text-white">Pending Offer Creations</h2>
-            <div className="space-y-4">
-              {pendingOfferCreations.map((offer) => (
-                <div
-                  key={offer.id.toString()}
-                  className="bg-gray-700 rounded-lg p-4"
-                >
-                  <div className="grid grid-cols-2 gap-2 text-white mb-4">
-                    <p>Producer: {offer.producer}</p>
-                    <p>Energy Type: {offer.energyType}</p>
-                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
-                  </div>
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => handleValidateOfferCreation(offer.id, true)}
-                      className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                    >
-                      Validate Creation
-                    </button>
-                    <button
-                      onClick={() => handleValidateOfferCreation(offer.id, false)}
-                      className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                    >
-                      Reject Creation
-                    </button>
-                  </div>
+          {/* Grid Layout for Pending Validations */}
+          <div className="grid grid-cols-2 gap-8 mb-8">
+            {/* Pending Offer Creations Section */}
+            {hasEnedis && (
+              <div className="bg-gray-800 rounded-lg p-3">
+                <h2 className="text-xl font-bold mb-1.5 text-white">Offres en Attente de Validation</h2>
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-2">
+                  {pendingOfferCreations.map((offer) => (
+                    <div key={offer.id.toString()} className="bg-[#225577] rounded-lg p-2">
+                      <div className="flex flex-wrap gap-1 text-white text-xs leading-snug">
+                        <p className="w-full">{formatQuantity(offer.quantity)} kWh • {formatPrice(offer.pricePerUnit)} POL/kWh</p>
+                        <p className="w-full">{offer.energyType} • Producteur: {offer.producer}</p>
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => handleValidateOfferCreation(offer.id, true)}
+                          className="flex-1 px-2 py-1 bg-[#18ad65] text-white text-xs rounded hover:bg-[#18ad65]/80"
+                        >
+                          Valider
+                        </button>
+                        <button
+                          onClick={() => handleValidateOfferCreation(offer.id, false)}
+                          className="flex-1 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+                        >
+                          Rejeter
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {pendingOfferCreations.length === 0 && (
+                    <p className="text-gray-400 text-sm">Aucune offre en attente</p>
+                  )}
                 </div>
-              ))}
-              {pendingOfferCreations.length === 0 && (
-                <p className="text-gray-400">No pending offer creations to validate</p>
-              )}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {/* Pending Energy Transfers Section - Only visible to ENEDIS role */}
-        {hasEnedis && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-8">
-            <h2 className="text-2xl font-bold mb-4 text-white">Pending Energy Transfers</h2>
-            <div className="space-y-4">
-              {pendingTransfers.map((offer) => (
-                <div
-                  key={offer.id.toString()}
-                  className="bg-gray-700 rounded-lg p-4"
-                >
-                  <div className="grid grid-cols-2 gap-2 text-white mb-4">
-                    <p>Producer: {offer.producer}</p>
-                    <p>Consumer: {offer.buyer}</p>
-                    <p>Energy Type: {offer.energyType}</p>
-                    <p>Quantity: {formatQuantity(offer.quantity)} kWh</p>
-                    <p>Price per kWh: {formatPrice(offer.pricePerUnit)} MATIC</p>
-                    <p>Total Price: {formatEther(offer.pricePerUnit * offer.quantity)} MATIC</p>
-                  </div>
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => handleValidateDelivery(offer.id, true)}
-                      className="flex-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                    >
-                      Validate Transfer
-                    </button>
-                    <button
-                      onClick={() => handleValidateDelivery(offer.id, false)}
-                      className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                    >
-                      Reject Transfer
-                    </button>
-                  </div>
+            {/* Pending Energy Transfers Section */}
+            {hasEnedis && (
+              <div className="bg-gray-800 rounded-lg p-3">
+                <h2 className="text-xl font-bold mb-1.5 text-white">Transferts d'Énergie en Attente</h2>
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-2">
+                  {pendingTransfers.map((offer) => (
+                    <div key={offer.id.toString()} className="bg-[#225577] rounded-lg p-2">
+                      <div className="flex flex-wrap gap-1 text-white text-xs leading-snug">
+                        <p className="w-full">{formatQuantity(offer.quantity)} kWh • {formatPrice(offer.pricePerUnit)} POL/kWh</p>
+                        <p className="w-full">{offer.energyType} • Total: {formatEther(offer.pricePerUnit * offer.quantity)} POL</p>
+                        <p className="w-full">De: {offer.producer}</p>
+                        <p className="w-full">À: {offer.buyer.slice(0, 6)}...{offer.buyer.slice(-4)}</p>
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => handleValidateDelivery(offer.id, true)}
+                          className="flex-1 px-2 py-1 bg-[#18ad65] text-white text-xs rounded hover:bg-[#18ad65]/80"
+                        >
+                          Valider
+                        </button>
+                        <button
+                          onClick={() => handleValidateDelivery(offer.id, false)}
+                          className="flex-1 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+                        >
+                          Rejeter
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {pendingTransfers.length === 0 && (
+                    <p className="text-gray-400 text-sm">Aucun transfert en attente</p>
+                  )}
                 </div>
-              ))}
-              {pendingTransfers.length === 0 && (
-                <p className="text-gray-400">No pending transfers to validate</p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* User Management Section */}
-        <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">User Management</h2>
-          
-          {/* Add User Form */}
-          <form onSubmit={handleAddUser} className="space-y-4 mb-8">
-            <div>
-              <label className="block text-sm font-medium mb-2 text-white">
-                User Address
-              </label>
-              <input
-                type="text"
-                value={newUserAddress}
-                onChange={(e) => setNewUserAddress(e.target.value)}
-                placeholder="0x..."
-                className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-                pattern="^0x[a-fA-F0-9]{40}$"
-                title="Please enter a valid Ethereum address (0x followed by 40 hexadecimal characters)"
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="isProducer"
-                checked={isProducer}
-                onChange={(e) => setIsProducer(e.target.checked)}
-                className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
-              />
-              <label htmlFor="isProducer" className="text-sm font-medium text-white">
-                Register as Producer (unchecked = Consumer)
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={!newUserAddress}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Add User
-            </button>
-          </form>
-
-          {/* User Removal Section */}
-          <div className="mt-8">
-            <h3 className="text-xl font-bold mb-4 text-white">User Removal</h3>
-            <div className="space-y-4">
+          {/* User Management Section */}
+          <div className="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">Gestion des Utilisateurs</h2>
+            
+            {/* Add User Form */}
+            <form onSubmit={handleAddUser} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2 text-white">
-                  User Address to Remove
+                  Adresse de l'Utilisateur
                 </label>
                 <input
                   type="text"
-                  value={removalAddress}
-                  onChange={(e) => setRemovalAddress(e.target.value)}
+                  value={newUserAddress}
+                  onChange={(e) => setNewUserAddress(e.target.value)}
                   placeholder="0x..."
                   className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
                   pattern="^0x[a-fA-F0-9]{40}$"
-                  title="Please enter a valid Ethereum address (0x followed by 40 hexadecimal characters)"
+                  title="Veuillez entrer une adresse Ethereum valide (0x suivi de 40 caractères hexadécimaux)"
                 />
               </div>
-              
-              <div className="flex space-x-4">
-                <button
-                  onClick={handleInitiateRemoval}
-                  disabled={isRemovingUser || !removalAddress}
-                  className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:opacity-50"
-                >
-                  Initiate Removal
-                </button>
-                <button
-                  onClick={handleCancelRemoval}
-                  disabled={isRemovingUser || !removalAddress}
-                  className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
-                >
-                  Cancel Removal
-                </button>
-                <button
-                  onClick={handleFinalizeRemoval}
-                  disabled={isRemovingUser || !removalAddress}
-                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
-                >
-                  Finalize Removal
-                </button>
-              </div>
-              <p className="text-sm text-gray-400">
-                Note: After initiating removal, there is a grace period of {GRACE_PERIOD / 3600} hours before the removal can be finalized.
-                During this period, the removal can be cancelled if needed.
-              </p>
-            </div>
-          </div>
-        </div>
 
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-2xl font-bold mb-4 text-white">Instructions</h2>
-          <ul className="list-disc list-inside space-y-2 text-white">
-            <li>Manage the voting process for MATIC distribution in the top section</li>
-            <li>Start and end voting sessions when appropriate</li>
-            <li>Review pending offer creations</li>
-            <li>Validate or reject new energy offers from producers</li>
-            <li>Review pending energy transfers</li>
-            <li>Validate transfers after confirming energy delivery on the grid</li>
-            <li>Reject transfers if energy delivery cannot be confirmed</li>
-            <li>Use the user management section to add new users to the system</li>
-            <li>The address must be a valid Ethereum address (0x followed by 40 hexadecimal characters)</li>
-            <li>To remove a user:</li>
-            <li className="ml-4">1. Initiate removal - starts the {GRACE_PERIOD / 3600} hour grace period</li>
-            <li className="ml-4">2. Cancel removal if needed during grace period</li>
-            <li className="ml-4">3. Finalize removal after grace period ends</li>
-            <li>You must have admin privileges to manage users and validate transfers</li>
-          </ul>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isProducer"
+                  checked={isProducer}
+                  onChange={(e) => setIsProducer(e.target.checked)}
+                  className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                />
+                <label htmlFor="isProducer" className="text-sm font-medium text-white">
+                  Enregistrer comme Producteur (décoché = Consommateur)
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!newUserAddress}
+                className="w-full px-4 py-2 bg-[#18ad65] text-white rounded hover:bg-[#18ad65]/80 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Ajouter l'Utilisateur
+              </button>
+            </form>
+
+            {/* User Removal Section - Commented out */}
+            {/*
+            <div className="mt-8">
+              <h3 className="text-xl font-bold mb-4 text-white">Suppression d'Utilisateur</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-white">
+                    Adresse de l'Utilisateur à Supprimer
+                  </label>
+                  <input
+                    type="text"
+                    value={removalAddress}
+                    onChange={(e) => setRemovalAddress(e.target.value)}
+                    placeholder="0x..."
+                    className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    pattern="^0x[a-fA-F0-9]{40}$"
+                    title="Veuillez entrer une adresse Ethereum valide (0x suivi de 40 caractères hexadécimaux)"
+                  />
+                </div>
+                
+                <div className="flex space-x-4">
+                  <button
+                    onClick={handleInitiateRemoval}
+                    disabled={isRemovingUser || !removalAddress}
+                    className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:opacity-50"
+                  >
+                    Initier la Suppression
+                  </button>
+                  <button
+                    onClick={handleCancelRemoval}
+                    disabled={isRemovingUser || !removalAddress}
+                    className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+                  >
+                    Annuler la Suppression
+                  </button>
+                  <button
+                    onClick={handleFinalizeRemoval}
+                    disabled={isRemovingUser || !removalAddress}
+                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                  >
+                    Finaliser la Suppression
+                  </button>
+                </div>
+                <p className="text-sm text-gray-400">
+                  Note: Après l'initiation de la suppression, il y a une période de grâce de {GRACE_PERIOD / 3600} heures avant que la suppression puisse être finalisée.
+                  Pendant cette période, la suppression peut être annulée si nécessaire.
+                </p>
+              </div>
+            </div>
+            */}
+          </div>
+
+          {/* Instructions Section */}
+          <div className="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">Instructions</h2>
+            <ul className="list-disc list-inside space-y-2 text-white">
+              <li>Gérez le processus de vote pour la distribution de POL dans la section supérieure</li>
+              <li>Démarrez et terminez les sessions de vote au moment approprié</li>
+              <li>Examinez les offres en attente de création</li>
+              <li>Validez ou rejetez les nouvelles offres d'énergie des producteurs</li>
+              <li>Examinez les transferts d'énergie en attente</li>
+              <li>Validez les transferts après confirmation de la livraison d'énergie sur le réseau</li>
+              <li>Rejetez les transferts si la livraison d'énergie ne peut pas être confirmée</li>
+              <li>Utilisez la section de gestion des utilisateurs pour ajouter de nouveaux utilisateurs au système</li>
+              <li>L'adresse doit être une adresse Ethereum valide (0x suivi de 40 caractères hexadécimaux)</li>
+              <li>Vous devez avoir les privilèges administrateur pour gérer les utilisateurs et valider les transferts</li>
+            </ul>
+          </div>
+
+          {/* Voting Management Component */}
+          <VotingManagement />
         </div>
       </div>
     </div>
