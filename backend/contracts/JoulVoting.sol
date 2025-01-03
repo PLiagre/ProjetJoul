@@ -50,7 +50,7 @@ contract JoulVoting is Ownable {
     uint public winningProposalID;
     uint[] public proposalVoteCounts;
     
-    IERC20 public joulToken;
+    IERC20 public immutable joulToken;
     mapping(address => Voter) public voters;
 
     event VoterRegistered(address voterAddress);

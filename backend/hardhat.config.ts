@@ -28,7 +28,7 @@ const config: HardhatUserConfig = {
     polygonAmoy: {
       url: "https://rpc-amoy.polygon.technology",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 80002,  // Correction du chainId pour Polygon Amoy
+      chainId: 80002,
       gas: 5000000,
       gasMultiplier: 2,
       blockGasLimit: 30000000,
@@ -38,6 +38,21 @@ const config: HardhatUserConfig = {
       url: "https://rpc.sepolia.org",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155111,
+    },
+    polygon: {
+      url: "https://polygon-rpc.com",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 137,
+      gas: 8000000,
+      gasMultiplier: 3,
+      blockGasLimit: 30000000,
+      timeout: 120000
+    }
+  },
+  etherscan: {
+    apiKey: {
+      polygon: "R4JEH18X7TI1PRTNJFKC7GJPBWVS1HTAER",
+      polygonAmoy: "R4JEH18X7TI1PRTNJFKC7GJPBWVS1HTAER"
     }
   }
 };
