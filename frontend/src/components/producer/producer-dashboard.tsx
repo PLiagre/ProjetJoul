@@ -249,8 +249,8 @@ export function ProducerDashboard() {
                 <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-2">
                   {producerOffers
                     .filter((offer) => offer.isPendingCreation)
-                    .map((offer, index) => (
-                      <div key={index} className="bg-[#225577] rounded-lg p-2">
+                    .map((offer) => (
+                      <div key={`${offer.producer}-${offer.quantity.toString()}-${offer.pricePerUnit.toString()}`} className="bg-[#225577] rounded-lg p-2">
                         <div className="flex flex-wrap gap-1 text-white text-xs leading-snug">
                           <p className="w-full">{formatQuantity(offer.quantity)} kWh • {formatPrice(offer.pricePerUnit)} POL/kWh</p>
                           <p className="w-full">{offer.energyType} • En Attente de Validation Enedis</p>
@@ -274,8 +274,8 @@ export function ProducerDashboard() {
                       !offer.isCompleted && 
                       offer.buyer === '0x0000000000000000000000000000000000000000'
                     )
-                    .map((offer, index) => (
-                      <div key={index} className="bg-[#225577] rounded-lg p-2">
+                    .map((offer) => (
+                      <div key={`${offer.producer}-${offer.quantity.toString()}-${offer.pricePerUnit.toString()}`} className="bg-[#225577] rounded-lg p-2">
                         <div className="flex flex-wrap gap-1 text-white text-xs leading-snug">
                           <p className="w-full">{formatQuantity(offer.quantity)} kWh • {formatPrice(offer.pricePerUnit)} POL/kWh</p>
                           <p className="w-full">{offer.energyType} • En Cours</p>
@@ -302,8 +302,8 @@ export function ProducerDashboard() {
                       offer.isCompleted || 
                       (offer.buyer !== '0x0000000000000000000000000000000000000000' && offer.isValidated)
                     )
-                    .map((offer, index) => (
-                      <div key={index} className="bg-[#225577] rounded-lg p-2">
+                    .map((offer) => (
+                      <div key={`${offer.producer}-${offer.quantity.toString()}-${offer.pricePerUnit.toString()}`} className="bg-[#225577] rounded-lg p-2">
                         <div className="flex flex-wrap gap-1 text-white text-xs">
                           <p className="w-full">{formatQuantity(offer.quantity)} kWh • {formatPrice(offer.pricePerUnit)} POL/kWh</p>
                           <p className="w-full">{offer.energyType} • Total: {formatEther(offer.pricePerUnit * offer.quantity)} POL</p>

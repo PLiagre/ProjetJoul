@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode, useState, useEffect } from 'react';
+import { createContext, useContext, ReactNode, useState, useEffect, useCallback } from 'react';
 import { useAccount, usePublicClient, useWalletClient, useChainId } from 'wagmi';
 import { getAddress, abi, DISTRIBUTION_PROPOSALS, VOTE_COST } from '../contracts/joul-voting';
 import { useToast } from '../components/ui/use-toast';
@@ -28,9 +28,13 @@ interface VotingContextType {
   getProposalVoteCount: (proposalId: number) => Promise<bigint>;
   winningProposalId: bigint | null;
   proposals: typeof DISTRIBUTION_PROPOSALS;
+  refreshState: () => Promise<void>;
 }
 
 const VotingContext = createContext<VotingContextType | undefined>(undefined);
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // 2 seconds
 
 function parseContractError(error: any): string {
   if (error.cause?.data?.message) {
@@ -47,7 +51,32 @@ function parseContractError(error: any): string {
     return 'Insufficient funds to complete the transaction.';
   }
 
+  if (errorMessage.toLowerCase().includes('json-rpc')) {
+    return 'Network connection issue. Please try again.';
+  }
+
   return `Transaction failed: ${errorMessage || 'Unknown error'}`;
+}
+
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  retries = MAX_RETRIES,
+  delay = RETRY_DELAY
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error: any) {
+    if (
+      retries > 0 &&
+      (error.message?.toLowerCase().includes('json-rpc') ||
+        error.message?.toLowerCase().includes('network') ||
+        error.message?.toLowerCase().includes('timeout'))
+    ) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(operation, retries - 1, delay);
+    }
+    throw error;
+  }
 }
 
 export function VotingProvider({ children }: { children: ReactNode }) {
@@ -242,6 +271,36 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshState = useCallback(async () => {
+    if (!publicClient || !isConnected) return;
+
+    try {
+      // Refresh workflow status
+      const status = await withRetry(() => 
+        publicClient.readContract({
+          address: contractAddress,
+          abi,
+          functionName: 'workflowStatus',
+        })
+      );
+      setWorkflowStatus(Number(status));
+
+      // Refresh winning proposal if votes are tallied
+      if (Number(status) === 2) {
+        const winningId = await withRetry(() =>
+          publicClient.readContract({
+            address: contractAddress,
+            abi,
+            functionName: 'winningProposalID',
+          })
+        );
+        setWinningProposalId(winningId as bigint);
+      }
+    } catch (error) {
+      console.error('Error refreshing state:', error);
+    }
+  }, [publicClient, isConnected, contractAddress]);
+
   const handleStartVotingSession = async () => {
     if (!walletClient || !isConnected || !publicClient || !address) {
       throw new Error('Please connect your wallet first');
@@ -249,21 +308,22 @@ export function VotingProvider({ children }: { children: ReactNode }) {
 
     try {
 
-      const { request } = await publicClient.simulateContract({
+      const { request } = await withRetry(() => publicClient.simulateContract({
         address: contractAddress,
         abi,
         functionName: 'startVotingSession',
         account: address,
-      });
+      }));
 
-      const hash = await walletClient.writeContract(request);
+      const hash = await withRetry(() => walletClient.writeContract(request));
 
       toast({
         title: "Starting Voting Session",
         description: "Please wait while the voting session is being started...",
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
+      await withRetry(() => publicClient.waitForTransactionReceipt({ hash }));
+      await refreshState();
 
       toast({
         title: "Voting Session Started",
@@ -286,21 +346,22 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { request } = await publicClient.simulateContract({
+      const { request } = await withRetry(() => publicClient.simulateContract({
         address: contractAddress,
         abi,
         functionName: 'endVotingSession',
         account: address,
-      });
+      }));
 
-      const hash = await walletClient.writeContract(request);
+      const hash = await withRetry(() => walletClient.writeContract(request));
 
       toast({
         title: "Ending Voting Session",
         description: "Please wait while the voting session is being ended...",
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
+      await withRetry(() => publicClient.waitForTransactionReceipt({ hash }));
+      await refreshState();
 
       toast({
         title: "Voting Session Ended",
@@ -323,21 +384,22 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { request } = await publicClient.simulateContract({
+      const { request } = await withRetry(() => publicClient.simulateContract({
         address: contractAddress,
         abi,
         functionName: 'tallyVotes',
         account: address,
-      });
+      }));
 
-      const hash = await walletClient.writeContract(request);
+      const hash = await withRetry(() => walletClient.writeContract(request));
 
       toast({
         title: "Tallying Votes",
         description: "Please wait while the votes are being tallied...",
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
+      await withRetry(() => publicClient.waitForTransactionReceipt({ hash }));
+      await refreshState();
 
       // Fetch winning distribution
       const result = await publicClient.readContract({
@@ -369,17 +431,18 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const value = {
-    voterInfo,
-    workflowStatus,
+  const value: VotingContextType = {
+    voterInfo: voterInfo,
+    workflowStatus: workflowStatus,
     vote: handleVote,
     startVotingSession: handleStartVotingSession,
     endVotingSession: handleEndVotingSession,
     tallyVotes: handleTallyVotes,
-    winningDistribution,
-    getProposalVoteCount,
-    winningProposalId,
+    winningDistribution: winningDistribution,
+    getProposalVoteCount: getProposalVoteCount,
+    winningProposalId: winningProposalId,
     proposals: DISTRIBUTION_PROPOSALS,
+    refreshState: refreshState,
   };
 
   return (

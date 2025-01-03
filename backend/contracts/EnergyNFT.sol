@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title EnergyNFT
@@ -11,7 +12,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
  * - Mintable uniquement par les rôles autorisés
  * - Traçabilité de la production d'énergie
  */
-contract EnergyNFT is ERC721, AccessControl {
+contract EnergyNFT is ERC721, AccessControl, ReentrancyGuard {
     uint256 private _nextTokenId;
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
@@ -54,7 +55,7 @@ contract EnergyNFT is ERC721, AccessControl {
         uint256 quantity,
         string memory energyType,
         string memory uri
-    ) external onlyRole(MINTER_ROLE) returns (uint256) {
+    ) external onlyRole(MINTER_ROLE) nonReentrant returns (uint256) {
         require(to != address(0), "Invalid recipient address");
         require(bytes(energyType).length > 0, "Energy type cannot be empty");
         require(quantity > 0, "Quantity must be greater than 0");
@@ -62,15 +63,17 @@ contract EnergyNFT is ERC721, AccessControl {
 
         uint256 tokenId = _nextTokenId++;
         
-        _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
-
+        // Mettre à jour l'état avant l'appel externe
+        _tokenURIs[tokenId] = uri;
         energyData[tokenId] = EnergyData({
             quantity: quantity,
             energyType: energyType,
             timestamp: block.timestamp,
             producer: to
         });
+
+        // Appel externe en dernier
+        _safeMint(to, tokenId);
 
         emit EnergyNFTMinted(
             tokenId,
@@ -94,14 +97,6 @@ contract EnergyNFT is ERC721, AccessControl {
     {
         require(_ownerOf(tokenId) != address(0), "Certificate does not exist");
         return energyData[tokenId];
-    }
-
-    /**
-     * @dev Définit l'URI d'un token
-     */
-    function _setTokenURI(uint256 tokenId, string memory uri) internal {
-        require(_ownerOf(tokenId) != address(0), "URI set for nonexistent token");
-        _tokenURIs[tokenId] = uri;
     }
 
     /**

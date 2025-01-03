@@ -136,8 +136,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         whenNotPaused 
     {
         require(user != address(0), "Invalid user address");
-        userManagement.addUser(user, isProducer);
         emit UserAdded(user, isProducer);
+        userManagement.addUser(user, isProducer);
     }
 
     function removeUser(address user) 
@@ -146,8 +146,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         whenNotPaused 
     {
         require(user != address(0), "Invalid user address");
-        userManagement.initiateUserRemoval(user);
         emit UserRemoved(user);
+        userManagement.initiateUserRemoval(user);
     }
 
     function commitToPurchase(bytes32 commitment) 
@@ -200,26 +200,34 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         external 
         onlyRole(ENEDIS_ROLE) 
         whenNotPaused 
+        nonReentrant
     {
         require(bytes(ipfsUri).length > 0, "IPFS URI cannot be empty");
         EnergyOffer storage offer = offers[offerId];
-        offer.ipfsUri = ipfsUri;
         require(offer.isPendingCreation, "Offer not pending creation");
         require(!offer.isActive, "Offer already active");
 
-        offer.isPendingCreation = false;
-        
+        // Calculate reward amount before state changes
+        uint256 rewardAmount = 0;
         if (isValid) {
-            offer.isActive = true;
-            // Calculate 0.1% of the energy amount in Wh, then convert to JOUL
-            uint256 rewardAmount = (offer.quantity * ONE_JOUL) / 1000000; // (Wh * 10^18) / (1000 * 1000)
-            console.log("Minting production reward:", offer.producer, rewardAmount);
+            rewardAmount = (offer.quantity * ONE_JOUL) / 1000000;
             require(rewardAmount > 0, "Production reward amount must be positive");
-            joulToken.mintProductionReward(offer.producer, rewardAmount);
-            console.log("Production reward minted successfully");
         }
 
+        // Update state
+        offer.ipfsUri = ipfsUri;
+        offer.isPendingCreation = false;
+        if (isValid) {
+            offer.isActive = true;
+        }
+
+        // Emit event
         emit OfferCreationValidated(offerId, isValid);
+
+        // External interactions last
+        if (isValid && rewardAmount > 0) {
+            joulToken.mintProductionReward(offer.producer, rewardAmount);
+        }
     }
 
     function purchaseOffer(uint256 offerId, bytes32 secret) 
@@ -312,133 +320,41 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         return true;
     }
 
+    // Structure pour stocker les paiements en attente
+    struct PendingPayment {
+        uint256 amount;
+        bool isPaid;
+    }
+
+    // Mapping pour stocker les paiements en attente
+    mapping(address => PendingPayment) public pendingPayments;
+
     function _distributeFeesAndRewards(uint256 offerId) private {
-        console.log("Starting distribution for offer:", offerId);
-        
         EnergyOffer storage offer = offers[offerId];
-        uint256 totalAmount = offer.quantity * offer.pricePerUnit;
-        console.log("Total amount:", totalAmount);
         
+        // Vérifications préalables
+        require(offer.producer != address(0), "Invalid producer address");
+        require(offer.buyer != address(0), "Invalid buyer address");
+        
+        // Calculs des montants
+        uint256 totalAmount = offer.quantity * offer.pricePerUnit;
         uint256 producerAmount = (totalAmount * PRODUCER_SHARE) / 1000;
         uint256 enedisAmount = (totalAmount * ENEDIS_SHARE) / 1000;
         uint256 platformAmount = (totalAmount * PLATFORM_SHARE) / 1000;
         uint256 poolAmount = (totalAmount * POOL_SHARE) / 1000;
-        
-        console.log("Calculated shares:");
-        console.log("Producer:", producerAmount);
-        console.log("Enedis:", enedisAmount);
-        console.log("Platform:", platformAmount);
-        console.log("Pool:", poolAmount);
-        console.log("Sum:", producerAmount + enedisAmount + platformAmount + poolAmount);
-        console.log("Total:", totalAmount);
+        uint256 fixedReward = ONE_JOUL / 2; // 0.5 JOUL
 
         require(
             producerAmount + enedisAmount + platformAmount + poolAmount == totalAmount,
             "Distribution amount mismatch"
         );
 
-        console.log("Sending to producer");
-        console.log("Address:", offer.producer);
-        console.log("Amount:", producerAmount);
-        payable(offer.producer).sendValue(producerAmount);
-        console.log("Sent to producer");
+        // Enregistrer les paiements en attente
+        pendingPayments[offer.producer].amount += producerAmount;
+        pendingPayments[enedisAddress].amount += enedisAmount;
+        pendingPayments[poolAddress].amount += poolAmount;
 
-        console.log("Sending to Enedis");
-        console.log("Address:", enedisAddress);
-        console.log("Amount:", enedisAmount);
-        payable(enedisAddress).sendValue(enedisAmount);
-        console.log("Sent to Enedis");
-
-        console.log("Sending to pool");
-        console.log("Address:", poolAddress);
-        console.log("Amount:", poolAmount);
-        payable(poolAddress).sendValue(poolAmount);
-        console.log("Sent to pool");
-
-        // Fixed reward of 0.5 JOUL for both sale and purchase
-        uint256 fixedReward = ONE_JOUL / 2; // 0.5 JOUL
-        console.log("Fixed reward amount:", fixedReward);
-        
-        // Verify addresses before minting
-        require(offer.producer != address(0), "Invalid producer address for minting");
-        require(offer.buyer != address(0), "Invalid buyer address for minting");
-        
-        console.log("Attempting to mint sale reward");
-        console.log("Producer address:", offer.producer);
-        console.log("Reward amount:", fixedReward);
-        
-        // Check if EnergyExchange has MINTER_ROLE
-        bytes32 minterRole = joulToken.MINTER_ROLE();
-        bool hasMinterRole = joulToken.hasRole(minterRole, address(this));
-        console.log("EnergyExchange has MINTER_ROLE:", hasMinterRole);
-
-        // Get current day's minted amount
-        uint256 day = block.timestamp / 1 days;
-        uint256 currentDayMinted = joulToken.dailyMintedAmount(day);
-        console.log("Current day minted amount:", currentDayMinted);
-        
-        try joulToken.mintSaleReward(offer.producer, fixedReward) {
-            console.log("Sale reward minted successfully");
-        } catch Error(string memory reason) {
-            console.log("Sale reward minting failed with Error:", reason);
-            console.log("Checking potential issues:");
-            console.log("Producer address:", offer.producer);
-            console.log("Reward amount:", fixedReward);
-            console.log("Daily mint limit:", joulToken.DAILY_MINT_LIMIT());
-            console.log("Current day minted:", currentDayMinted);
-            revert(string(abi.encodePacked("Sale reward minting failed: ", reason)));
-        } catch Panic(uint errorCode) {
-            string memory panicReason;
-            if (errorCode == 0x01) panicReason = "Assertion failed";
-            else if (errorCode == 0x11) panicReason = "Arithmetic overflow";
-            else if (errorCode == 0x12) panicReason = "Division by zero";
-            else panicReason = "Unknown panic code";
-            console.log("Sale reward minting failed with Panic:", panicReason);
-            revert(string(abi.encodePacked("Sale reward minting failed with panic: ", panicReason)));
-        } catch (bytes memory err) {
-            console.log("Sale reward minting failed with low-level error");
-            revert("Sale reward minting failed with low-level error");
-        }
-        
-        console.log("Attempting to mint purchase reward");
-        console.log("Buyer address:", offer.buyer);
-        console.log("Reward amount:", fixedReward);
-        
-        try joulToken.mintPurchaseReward(offer.buyer, fixedReward) {
-            console.log("Purchase reward minted successfully");
-        } catch Error(string memory reason) {
-            console.log("Purchase reward minting failed with Error:", reason);
-            console.log("Checking potential issues:");
-            console.log("Buyer address:", offer.buyer);
-            console.log("Reward amount:", fixedReward);
-            console.log("Daily mint limit:", joulToken.DAILY_MINT_LIMIT());
-            console.log("Current day minted:", currentDayMinted);
-            revert(string(abi.encodePacked("Purchase reward minting failed: ", reason)));
-        } catch Panic(uint errorCode) {
-            string memory panicReason;
-            if (errorCode == 0x01) panicReason = "Assertion failed";
-            else if (errorCode == 0x11) panicReason = "Arithmetic overflow";
-            else if (errorCode == 0x12) panicReason = "Division by zero";
-            else panicReason = "Unknown panic code";
-            console.log("Purchase reward minting failed with Panic:", panicReason);
-            revert(string(abi.encodePacked("Purchase reward minting failed with panic: ", panicReason)));
-        } catch (bytes memory err) {
-            console.log("Purchase reward minting failed with low-level error");
-            revert("Purchase reward minting failed with low-level error");
-        }
-
-        // Mint NFT certificate for the completed transaction to the producer
-        try energyNFT.mintCertificate(
-            offer.producer,
-            offer.quantity,
-            offer.energyType,
-            offer.ipfsUri
-        ) {
-            console.log("NFT certificate minted successfully to producer");
-        } catch Error(string memory reason) {
-            console.log("NFT minting failed with Error:", reason);
-            revert(string(abi.encodePacked("NFT minting failed: ", reason)));
-        }
+        // Émettre l'événement avant les interactions externes
         emit FeesDistributed(
             offerId,
             producerAmount,
@@ -446,38 +362,27 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             platformAmount,
             poolAmount
         );
+
+        // Minting des récompenses
+        joulToken.mintSaleReward(offer.producer, fixedReward);
+        joulToken.mintPurchaseReward(offer.buyer, fixedReward);
+        
+        // Mint du NFT en dernier car c'est une opération non critique
+        energyNFT.mintCertificate(
+            offer.producer,
+            offer.quantity,
+            offer.energyType,
+            offer.ipfsUri
+        );
     }
 
-    function _generateTokenURI(uint256 offerId) 
-        private 
-        pure 
-        returns (string memory) 
-    {
-        return string(abi.encodePacked("ipfs://", uint2str(offerId)));
-    }
-
-    function uint2str(uint256 _i) 
-        private 
-        pure 
-        returns (string memory str) 
-    {
-        if (_i == 0) {
-            return "0";
-        }
-        uint256 j = _i;
-        uint256 length;
-        while (j != 0) {
-            length++;
-            j /= 10;
-        }
-        bytes memory bstr = new bytes(length);
-        uint256 k = length;
-        j = _i;
-        while (j != 0) {
-            bstr[--k] = bytes1(uint8(48 + j % 10));
-            j /= 10;
-        }
-        str = string(bstr);
+    // Nouvelle fonction pour retirer les paiements en attente
+    function withdrawPayment() external nonReentrant {
+        uint256 amount = pendingPayments[msg.sender].amount;
+        require(amount > 0, "No payment available");
+        
+        pendingPayments[msg.sender].amount = 0;
+        payable(msg.sender).sendValue(amount);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {
