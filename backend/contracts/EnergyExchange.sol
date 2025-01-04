@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
-import "hardhat/console.sol";
 import "./JoulToken.sol";
 import "./EnergyNFT.sol";
 import "./UserManagement.sol";
@@ -265,31 +264,9 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         nonReentrant 
         returns (bool)
     {
-        console.log("\n=== validateAndDistribute called ===");
-        console.log("Transaction sender:", msg.sender);
-        
-        // Debug: Check if caller has ENEDIS_ROLE
-        console.log("Caller address:", msg.sender);
-        console.log("Has ENEDIS_ROLE:", hasRole(ENEDIS_ROLE, msg.sender));
-
-        // Debug: Check if EnergyExchange has MINTER_ROLE
-        bytes32 minterRole = joulToken.MINTER_ROLE();
-        console.log("EnergyExchange address:", address(this));
-        console.log("Has MINTER_ROLE:", joulToken.hasRole(minterRole, address(this)));
-
-        console.log("Starting validateAndDistribute for offer:", offerId);
-        console.log("isValid:", isValid);
-        
         // Check if offer exists and get it
         require(offerId < _nextOfferId, "Invalid offer ID");
         EnergyOffer storage offer = offers[offerId];
-        console.log("\nOffer State:");
-        console.log("Producer:", offer.producer);
-        console.log("Buyer:", offer.buyer);
-        console.log("isActive:", offer.isActive);
-        console.log("isValidated:", offer.isValidated);
-        console.log("isCompleted:", offer.isCompleted);
-        console.log("isPendingCreation:", offer.isPendingCreation);
         
         // Validate offer state
         require(offer.producer != address(0), "Offer does not exist");
@@ -297,30 +274,22 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         require(offer.buyer != address(0), "Offer not purchased");
         require(!offer.isPendingCreation, "Offer creation not validated");
         require(block.timestamp <= offer.purchaseTimestamp + VALIDATION_DEADLINE, "Validation deadline exceeded");
-        console.log("\nOffer state validation passed");
-
         // Calculate refund amount before state changes
         uint256 totalPrice = offer.quantity * offer.pricePerUnit;
-        console.log("Total price:", totalPrice);
 
         // Update state
         offer.isValidated = isValid;
         offer.isCompleted = true;
-        console.log("Offer state updated. isValidated:", isValid, "isCompleted: true");
 
         // Emit event
         emit OfferValidated(offerId, isValid);
-        console.log("OfferValidated event emitted");
 
         // Handle validation result
         if (isValid) {
-            console.log("Offer is valid, proceeding with distribution");
             _distributeFeesAndRewards(offerId);
         } else {
-            console.log("Offer is invalid, proceeding with refund");
             (bool success, ) = payable(offer.buyer).call{value: totalPrice}("");
             require(success, "Refund transfer failed");
-            console.log("Refund completed successfully");
         }
         return true;
     }
