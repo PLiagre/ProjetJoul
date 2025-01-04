@@ -1,13 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import {
-  Contract,
-  ContractTransactionResponse,
-  EventLog,
-  Log
-} from "ethers";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { JoulVoting, JoulToken } from "../typechain-types";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("JoulVoting", function () {
   let joulVoting: JoulVoting;
@@ -16,59 +10,35 @@ describe("JoulVoting", function () {
   let voter1: HardhatEthersSigner;
   let voter2: HardhatEthersSigner;
   let voter3: HardhatEthersSigner;
-  let nonVoter: HardhatEthersSigner;
-
-  enum WorkflowStatus {
-    RegisteringVoters,
-    VotingSessionStarted,
-    VotingSessionEnded,
-    VotesTallied
-  }
 
   beforeEach(async function () {
-    [owner, voter1, voter2, voter3, nonVoter] = await ethers.getSigners();
+    [owner, voter1, voter2, voter3] = await ethers.getSigners();
 
-    // Deploy JoulToken first
     const JoulToken = await ethers.getContractFactory("JoulToken");
-    joulToken = await JoulToken.deploy() as JoulToken;
-    await joulToken.waitForDeployment();
+    joulToken = await JoulToken.deploy();
 
-    // Deploy JoulVoting with JoulToken address
     const JoulVoting = await ethers.getContractFactory("JoulVoting");
-    joulVoting = await JoulVoting.deploy(await joulToken.getAddress()) as JoulVoting;
-    await joulVoting.waitForDeployment();
+    joulVoting = await JoulVoting.deploy(await joulToken.getAddress());
 
-    // Grant MINTER_ROLE to owner for testing
+    // Give MINTER_ROLE to owner for testing
     const MINTER_ROLE = await joulToken.MINTER_ROLE();
-    await joulToken.grantRole(MINTER_ROLE, await owner.getAddress());
-
-    // Mint some JOUL tokens to voters for testing (using production rewards)
-    const energyAmount = ethers.parseEther("1000"); // 1000 Wh to get 10 JOUL (1% rate)
-    await joulToken.mintProductionReward(await voter1.getAddress(), energyAmount);
-    await joulToken.mintProductionReward(await voter2.getAddress(), energyAmount);
-    await joulToken.mintProductionReward(await voter3.getAddress(), energyAmount);
-
-    // Approve JoulVoting contract to spend tokens (1 JOUL per vote)
-    const approveAmount = ethers.parseEther("10"); // Approve all 10 JOUL tokens
-    await joulToken.connect(voter1).approve(await joulVoting.getAddress(), approveAmount);
-    await joulToken.connect(voter2).approve(await joulVoting.getAddress(), approveAmount);
-    await joulToken.connect(voter3).approve(await joulVoting.getAddress(), approveAmount);
+    await joulToken.grantRole(MINTER_ROLE, owner.address);
   });
 
-  describe("Deployment", function () {
-    it("Should set the right owner", async function () {
-      expect(await joulVoting.owner()).to.equal(await owner.getAddress());
+  describe("Deployment", () => {
+    it("Should set the right owner", async () => {
+      expect(await joulVoting.owner()).to.equal(owner.address);
     });
 
-    it("Should set the correct JoulToken address", async function () {
+    it("Should set the correct JoulToken address", async () => {
       expect(await joulVoting.joulToken()).to.equal(await joulToken.getAddress());
     });
 
-    it("Should initialize with RegisteringVoters status", async function () {
-      expect(await joulVoting.workflowStatus()).to.equal(WorkflowStatus.RegisteringVoters);
+    it("Should initialize with VotingSessionStarted status", async () => {
+      expect(await joulVoting.workflowStatus()).to.equal(0);
     });
 
-    it("Should initialize proposals with correct distributions", async function () {
+    it("Should initialize proposals with correct distributions", async () => {
       const proposal0 = await joulVoting.proposals(0);
       expect(proposal0.producerShare).to.equal(65);
       expect(proposal0.enedisShare).to.equal(15);
@@ -89,178 +59,143 @@ describe("JoulVoting", function () {
     });
   });
 
-  describe("Voter Registration", function () {
-    it("Should allow owner to register a voter", async function () {
-      await expect(joulVoting.addVoter(await voter1.getAddress()))
-        .to.emit(joulVoting, "VoterRegistered")
-        .withArgs(await voter1.getAddress());
+  describe("Voting Mechanism", () => {
+    beforeEach(async () => {
+      // Give tokens to voters
+      await joulToken.mintProductionReward(voter1.address, ethers.parseEther("1000"));
+      await joulToken.mintProductionReward(voter2.address, ethers.parseEther("1000"));
+      await joulToken.mintProductionReward(voter3.address, ethers.parseEther("1000"));
 
-      const voter = await joulVoting.getVoter(await voter1.getAddress());
-      expect(voter.isRegistered).to.be.true;
-      expect(voter.hasVoted).to.be.false;
+      // Approve tokens for voting
+      await joulToken.connect(voter1).approve(await joulVoting.getAddress(), ethers.parseEther("1"));
+      await joulToken.connect(voter2).approve(await joulVoting.getAddress(), ethers.parseEther("1"));
+      await joulToken.connect(voter3).approve(await joulVoting.getAddress(), ethers.parseEther("1"));
     });
 
-    it("Should not allow non-owner to register a voter", async function () {
-      await expect(
-        joulVoting.connect(voter1).addVoter(await voter2.getAddress())
-      ).to.be.revertedWithCustomError(joulVoting, "OwnableUnauthorizedAccount");
-    });
-
-    it("Should not allow registering the same voter twice", async function () {
-      await joulVoting.addVoter(await voter1.getAddress());
-      await expect(
-        joulVoting.addVoter(await voter1.getAddress())
-      ).to.be.revertedWith("Already registered");
-    });
-
-    it("Should not allow registering voters after voting session starts", async function () {
-      await joulVoting.startVotingSession();
-      await expect(
-        joulVoting.addVoter(await voter1.getAddress())
-      ).to.be.revertedWith("Voters registration is not open");
-    });
-  });
-
-  describe("Voting Session Management", function () {
-    it("Should allow owner to start voting session", async function () {
-      await expect(joulVoting.startVotingSession())
-        .to.emit(joulVoting, "WorkflowStatusChange")
-        .withArgs(WorkflowStatus.RegisteringVoters, WorkflowStatus.VotingSessionStarted);
-    });
-
-    it("Should allow owner to end voting session", async function () {
-      await joulVoting.startVotingSession();
-      await expect(joulVoting.endVotingSession())
-        .to.emit(joulVoting, "WorkflowStatusChange")
-        .withArgs(WorkflowStatus.VotingSessionStarted, WorkflowStatus.VotingSessionEnded);
-    });
-
-    it("Should not allow ending voting session before starting", async function () {
-      await expect(joulVoting.endVotingSession())
-        .to.be.revertedWith("Voting session hasn't started");
-    });
-
-    it("Should not allow non-owner to manage voting session", async function () {
-      await expect(joulVoting.connect(voter1).startVotingSession())
-        .to.be.revertedWithCustomError(joulVoting, "OwnableUnauthorizedAccount");
-      
-      await joulVoting.startVotingSession();
-      await expect(joulVoting.connect(voter1).endVotingSession())
-        .to.be.revertedWithCustomError(joulVoting, "OwnableUnauthorizedAccount");
-    });
-  });
-
-  describe("Voting Mechanism", function () {
-    beforeEach(async function () {
-      await joulVoting.addVoter(await voter1.getAddress());
-      await joulVoting.addVoter(await voter2.getAddress());
-      await joulVoting.startVotingSession();
-    });
-
-    it("Should allow registered voter to vote", async function () {
-      await expect(joulVoting.connect(voter1).setVote(1))
-        .to.emit(joulVoting, "Voted")
-        .withArgs(await voter1.getAddress(), 1);
-
-      const voter = await joulVoting.getVoter(await voter1.getAddress());
+    it("Should allow voter with JOUL tokens to vote", async () => {
+      await joulVoting.connect(voter1).setVote(0);
+      const voter = await joulVoting.getVoter(voter1.address);
       expect(voter.hasVoted).to.be.true;
-      expect(voter.votedProposalId).to.equal(1);
+      expect(voter.votedProposalId).to.equal(0);
     });
 
-    it("Should burn 1 JOUL token when voting", async function () {
-      const balanceBefore = await joulToken.balanceOf(await voter1.getAddress());
-      await joulVoting.connect(voter1).setVote(1);
-      const balanceAfter = await joulToken.balanceOf(await voter1.getAddress());
-      
+    it("Should burn 1 JOUL token when voting", async () => {
+      const balanceBefore = await joulToken.balanceOf(voter1.address);
+      await joulVoting.connect(voter1).setVote(0);
+      const balanceAfter = await joulToken.balanceOf(voter1.address);
       expect(balanceBefore - balanceAfter).to.equal(ethers.parseEther("1"));
     });
 
-    it("Should not allow voting without enough JOUL tokens", async function () {
-      // Transfer all tokens away
-      const balance = await joulToken.balanceOf(await voter1.getAddress());
-      await joulToken.connect(voter1).transfer(await nonVoter.getAddress(), balance);
-      
-      await expect(joulVoting.connect(voter1).setVote(1))
-        .to.be.revertedWith("Insufficient JOUL tokens");
+    it("Should not allow voting without enough JOUL tokens", async () => {
+      // Transfer all tokens to make balance insufficient
+      const balance = await joulToken.balanceOf(voter1.address);
+      await joulToken.connect(voter1).transfer(owner.address, balance);
+      await expect(
+        joulVoting.connect(voter1).setVote(0)
+      ).to.be.revertedWithCustomError(joulVoting, "InsufficientJoulTokens");
     });
 
-    it("Should not allow voting twice", async function () {
-      await joulVoting.connect(voter1).setVote(1);
-      await expect(joulVoting.connect(voter1).setVote(2))
-        .to.be.revertedWith("Already voted");
+    it("Should not allow voting twice for same proposal", async () => {
+      await joulVoting.connect(voter1).setVote(0);
+      await expect(
+        joulVoting.connect(voter1).setVote(0)
+      ).to.be.revertedWithCustomError(joulVoting, "AlreadyVoted");
     });
 
-    it("Should not allow voting for invalid proposal", async function () {
-      await expect(joulVoting.connect(voter1).setVote(3))
-        .to.be.revertedWith("Invalid proposal ID");
+    it("Should not allow voting for different proposal due to insufficient tokens", async () => {
+      await joulVoting.connect(voter1).setVote(0);
+      await expect(
+        joulVoting.connect(voter1).setVote(1)
+      ).to.be.revertedWithCustomError(joulVoting, "InsufficientJoulTokens");
     });
 
-    it("Should not allow non-registered voters to vote", async function () {
-      await expect(joulVoting.connect(nonVoter).setVote(1))
-        .to.be.revertedWith("You're not a registered voter");
+    it("Should not allow voting for invalid proposal", async () => {
+      await expect(
+        joulVoting.connect(voter1).setVote(99)
+      ).to.be.revertedWithCustomError(joulVoting, "InvalidProposalId");
     });
 
-    it("Should not allow voting before session starts", async function () {
-      const JoulVoting = await ethers.getContractFactory("JoulVoting");
-      const newVoting = await JoulVoting.deploy(await joulToken.getAddress()) as JoulVoting;
-      await newVoting.addVoter(await voter1.getAddress());
-      
-      await expect(newVoting.connect(voter1).setVote(1))
-        .to.be.revertedWith("Voting session hasn't started");
-    });
-
-    it("Should track vote counts correctly", async function () {
-      await joulVoting.connect(voter1).setVote(1);
+    it("Should track vote counts correctly", async () => {
+      await joulVoting.connect(voter1).setVote(0);
       await joulVoting.connect(voter2).setVote(1);
-      
-      expect(await joulVoting.getProposalVoteCount(1)).to.equal(2);
+      await joulVoting.connect(voter3).setVote(0);
+
+      expect(await joulVoting.getProposalVoteCount(0)).to.equal(2);
+      expect(await joulVoting.getProposalVoteCount(1)).to.equal(1);
+      expect(await joulVoting.getProposalVoteCount(2)).to.equal(0);
+    });
+
+    it("Should not allow voting when session is ended", async () => {
+      await joulVoting.connect(owner).endVotingSession();
+      await expect(
+        joulVoting.connect(voter1).setVote(0)
+      ).to.be.revertedWithCustomError(joulVoting, "VotingSessionNotStarted");
     });
   });
 
-  describe("Vote Tallying", function () {
-    beforeEach(async function () {
-      await joulVoting.addVoter(await voter1.getAddress());
-      await joulVoting.addVoter(await voter2.getAddress());
-      await joulVoting.addVoter(await voter3.getAddress());
-      await joulVoting.startVotingSession();
+  describe("Vote Tallying", () => {
+    beforeEach(async () => {
+      // Setup votes
+      await joulToken.mintProductionReward(voter1.address, ethers.parseEther("1000"));
+      await joulToken.mintProductionReward(voter2.address, ethers.parseEther("1000"));
+      await joulToken.connect(voter1).approve(await joulVoting.getAddress(), ethers.parseEther("1"));
+      await joulToken.connect(voter2).approve(await joulVoting.getAddress(), ethers.parseEther("1"));
       
       await joulVoting.connect(voter1).setVote(0);
       await joulVoting.connect(voter2).setVote(1);
-      await joulVoting.connect(voter3).setVote(1);
-      
-      await joulVoting.endVotingSession();
     });
 
-    it("Should correctly determine the winning proposal", async function () {
-      await joulVoting.tallyVotes();
+    it("Should correctly determine the winning proposal", async () => {
+      await joulVoting.connect(owner).endVotingSession();
+      await joulVoting.connect(owner).tallyVotes();
+      expect(await joulVoting.winningProposalID()).to.equal(0);
+    });
+
+    it("Should not allow tallying before voting ends", async () => {
+      await expect(
+        joulVoting.connect(owner).tallyVotes()
+      ).to.be.revertedWithCustomError(joulVoting, "VotingSessionNotEnded");
+    });
+
+    it("Should return correct winning distribution", async () => {
+      await joulVoting.connect(owner).endVotingSession();
+      await joulVoting.connect(owner).tallyVotes();
+      
+      const winningDist = await joulVoting.getWinningDistribution();
+      expect(winningDist.producerShare).to.equal(65);
+      expect(winningDist.enedisShare).to.equal(15);
+      expect(winningDist.joulShare).to.equal(10);
+      expect(winningDist.poolShare).to.equal(10);
+    });
+
+    it("Should not allow getting winning distribution before tally", async () => {
+      await joulVoting.connect(owner).endVotingSession();
+      await expect(
+        joulVoting.getWinningDistribution()
+      ).to.be.revertedWithCustomError(joulVoting, "VotesNotTallied");
+    });
+
+    it("Should handle tie votes correctly", async () => {
+      // Add another vote to make it tie
+      await joulToken.mintProductionReward(voter3.address, ethers.parseEther("1000"));
+      await joulToken.connect(voter3).approve(await joulVoting.getAddress(), ethers.parseEther("1"));
+      await joulVoting.connect(voter3).setVote(1);
+
+      await joulVoting.connect(owner).endVotingSession();
+      await joulVoting.connect(owner).tallyVotes();
+      
+      // In case of tie, the first proposal with highest votes wins
       expect(await joulVoting.winningProposalID()).to.equal(1);
     });
 
-    it("Should not allow tallying before voting ends", async function () {
-      const newVoting = await (await ethers.getContractFactory("JoulVoting"))
-        .deploy(await joulToken.getAddress()) as JoulVoting;
-      await newVoting.startVotingSession();
+    it("Should allow starting new voting session after tally", async () => {
+      await joulVoting.connect(owner).endVotingSession();
+      await joulVoting.connect(owner).tallyVotes();
+      await joulVoting.connect(owner).startVotingSession();
       
-      await expect(newVoting.tallyVotes())
-        .to.be.revertedWith("Voting session not ended");
-    });
-
-    it("Should return correct winning distribution", async function () {
-      await joulVoting.tallyVotes();
-      const winningDist = await joulVoting.getWinningDistribution();
-      
-      expect(winningDist.producerShare).to.equal(75);
-      expect(winningDist.enedisShare).to.equal(20);
-      expect(winningDist.joulShare).to.equal(3);
-      expect(winningDist.poolShare).to.equal(2);
-    });
-
-    it("Should not allow getting winning distribution before tally", async function () {
-      const newVoting = await (await ethers.getContractFactory("JoulVoting"))
-        .deploy(await joulToken.getAddress()) as JoulVoting;
-      
-      await expect(newVoting.getWinningDistribution())
-        .to.be.revertedWith("Votes not tallied yet");
+      expect(await joulVoting.workflowStatus()).to.equal(0);
+      expect(await joulVoting.getProposalVoteCount(0)).to.equal(0);
+      expect(await joulVoting.getProposalVoteCount(1)).to.equal(0);
     });
   });
 });

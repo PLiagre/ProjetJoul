@@ -19,6 +19,7 @@ async function main() {
     const [deployer] = await hre.ethers.getSigners();
     console.log("Deploying contracts with account:", deployer.address);
     console.log("Network: Polygon Amoy");
+    console.log("Explorer: https://www.polygonscan.com/");
 
     // 1. Déploiement du JoulToken
     console.log("\nDeploying JoulToken...");
@@ -28,6 +29,7 @@ async function main() {
     await joulToken.waitForDeployment();
     const joulTokenAddress = await joulToken.getAddress();
     console.log("JoulToken deployed to:", joulTokenAddress);
+    console.log(`View on Polyscan: https://amoy.polygonscan.com/address/${joulTokenAddress}`);
 
     // 2. Déploiement du EnergyNFT
     console.log("\nDeploying EnergyNFT...");
@@ -37,6 +39,7 @@ async function main() {
     await energyNFT.waitForDeployment();
     const energyNFTAddress = await energyNFT.getAddress();
     console.log("EnergyNFT deployed to:", energyNFTAddress);
+    console.log(`View on Polyscan: https://amoy.polygonscan.com/address/${energyNFTAddress}`);
 
     // 3. Déploiement du UserManagement
     console.log("\nDeploying UserManagement...");
@@ -46,6 +49,7 @@ async function main() {
     await userManagement.waitForDeployment();
     const userManagementAddress = await userManagement.getAddress();
     console.log("UserManagement deployed to:", userManagementAddress);
+    console.log(`View on Polyscan: https://amoy.polygonscan.com/address/${userManagementAddress}`);
 
     // 4. Déploiement du EnergyExchange
     console.log("\nDeploying EnergyExchange...");
@@ -70,6 +74,7 @@ async function main() {
       await energyExchange.waitForDeployment();
       const energyExchangeAddress = await energyExchange.getAddress();
       console.log("EnergyExchange deployed to:", energyExchangeAddress);
+      console.log(`View on Polyscan: https://amoy.polygonscan.com/address/${energyExchangeAddress}`);
 
       // Donner le DEFAULT_ADMIN_ROLE au déployeur sur EnergyNFT
       const NFT_DEFAULT_ADMIN_ROLE = await energyNFT.DEFAULT_ADMIN_ROLE();
@@ -85,6 +90,7 @@ async function main() {
       await joulVoting.waitForDeployment();
       const joulVotingAddress = await joulVoting.getAddress();
       console.log("JoulVoting deployed to:", joulVotingAddress);
+      console.log(`View on Polyscan: https://amoy.polygonscan.com/address/${joulVotingAddress}`);
 
       // Configuration des rôles
       console.log("\nSetting up roles...");
@@ -249,6 +255,67 @@ async function main() {
       console.log("\nDeployment successful! Contract addresses saved to:");
       console.log(`- ${deploymentPath}/deployment-amoy-${deploymentInfo.timestamp}.json`);
       console.log(`- ${frontendPath}/contract-addresses-amoy.json`);
+
+      // Vérification des contrats sur Etherscan
+      console.log("\nVerifying contracts on Polyscan...");
+
+      // Attendre quelques blocs pour s'assurer que les contrats sont bien déployés
+      console.log("Waiting for contract deployments to be confirmed...");
+      await new Promise(resolve => setTimeout(resolve, 30000)); // 30 secondes d'attente
+
+      try {
+        // Vérifier JoulToken
+        // @ts-ignore
+        await hre.run("verify:verify", {
+          address: joulTokenAddress,
+          contract: "contracts/JoulToken.sol:JoulToken"
+        });
+        console.log("JoulToken verified successfully");
+
+        // Vérifier EnergyNFT
+        // @ts-ignore
+        await hre.run("verify:verify", {
+          address: energyNFTAddress,
+          contract: "contracts/EnergyNFT.sol:EnergyNFT"
+        });
+        console.log("EnergyNFT verified successfully");
+
+        // Vérifier UserManagement
+        // @ts-ignore
+        await hre.run("verify:verify", {
+          address: userManagementAddress,
+          contract: "contracts/UserManagement.sol:UserManagement"
+        });
+        console.log("UserManagement verified successfully");
+
+        // Vérifier EnergyExchange
+        // @ts-ignore
+        await hre.run("verify:verify", {
+          address: energyExchangeAddress,
+          contract: "contracts/EnergyExchange.sol:EnergyExchange",
+          constructorArguments: [
+            joulTokenAddress,
+            energyNFTAddress,
+            userManagementAddress,
+            process.env.ENEDIS_ADDRESS,
+            process.env.POOL_ADDRESS
+          ]
+        });
+        console.log("EnergyExchange verified successfully");
+
+        // Vérifier JoulVoting
+        // @ts-ignore
+        await hre.run("verify:verify", {
+          address: joulVotingAddress,
+          contract: "contracts/JoulVoting.sol:JoulVoting",
+          constructorArguments: [joulTokenAddress]
+        });
+        console.log("JoulVoting verified successfully");
+
+      } catch (error) {
+        console.error("Error during contract verification:", error);
+        console.log("Contract verification failed, but deployment was successful");
+      }
 
     } catch (error) {
       console.error("\nDeployment failed!");

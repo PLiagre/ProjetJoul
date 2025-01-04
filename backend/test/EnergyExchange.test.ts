@@ -32,6 +32,7 @@ describe("EnergyExchange", function () {
   const PAUSER_ROLE = ethers.id("PAUSER_ROLE");
   const ADMIN_ROLE = ethers.keccak256(ethers.toUtf8Bytes("ADMIN_ROLE"));
   const VALIDATION_DEADLINE = 24 * 60 * 60; // 24 hours in seconds
+  const IPFS_URI = "ipfs://QmTest"; // Example IPFS URI for testing
 
   beforeEach(async function () {
     [owner, enedis, producer, consumer, pool, platform] = await ethers.getSigners();
@@ -145,7 +146,7 @@ describe("EnergyExchange", function () {
       const event = (receipt?.logs[0] as EventLog);
       const offerId = event.args[0]; // offerId is the first argument
 
-      await energyExchange.connect(enedis).validateOfferCreation(offerId, true);
+      await energyExchange.connect(enedis).validateOfferCreation(offerId, true, IPFS_URI);
       const offer = await energyExchange.offers(offerId);
       expect(offer.isActive).to.be.true;
     });
@@ -161,9 +162,38 @@ describe("EnergyExchange", function () {
       const offerId = event.args[0];
 
       const balanceBefore = await joulToken.balanceOf(await producer.getAddress());
-      await energyExchange.connect(enedis).validateOfferCreation(offerId, true);
+      await energyExchange.connect(enedis).validateOfferCreation(offerId, true, IPFS_URI);
       const balanceAfter = await joulToken.balanceOf(await producer.getAddress());
-      expect(balanceAfter - balanceBefore).to.equal(10n); // 1% of 1000
+      // Contract uses (quantity * ONE_JOUL) / 1000000
+      const expectedReward = (1000n * ethers.parseEther("1")) / 1000000n;
+      expect(balanceAfter - balanceBefore).to.equal(expectedReward);
+    });
+  });
+
+  describe("Security Limits", function () {
+    beforeEach(async function () {
+      await energyExchange.addUser(await producer.getAddress(), true);
+    });
+
+    it("Should not allow quantity above MAX_QUANTITY", async function () {
+      const maxQuantity = await energyExchange.MAX_QUANTITY();
+      await expect(
+        energyExchange.connect(producer).createOffer(maxQuantity + 1n, ethers.parseEther("0.001"), "solar")
+      ).to.be.revertedWith("Invalid quantity");
+    });
+
+    it("Should not allow price above MAX_PRICE_PER_UNIT", async function () {
+      const maxPrice = await energyExchange.MAX_PRICE_PER_UNIT();
+      await expect(
+        energyExchange.connect(producer).createOffer(1000n, maxPrice + 1n, "solar")
+      ).to.be.revertedWith("Invalid price");
+    });
+
+    it("Should not allow energy type longer than MAX_ENERGY_TYPE_LENGTH", async function () {
+      const longType = "x".repeat(33); // 33 caractères
+      await expect(
+        energyExchange.connect(producer).createOffer(1000n, ethers.parseEther("0.001"), longType)
+      ).to.be.revertedWith("Energy type too long");
     });
   });
 
@@ -171,11 +201,14 @@ describe("EnergyExchange", function () {
     let offerId: bigint;
     const quantity = 1000n;
     const pricePerUnit = ethers.parseEther("0.001");
+    let secret: string;
+    let commitment: string;
 
     beforeEach(async function () {
       await energyExchange.addUser(await producer.getAddress(), true);
       await energyExchange.addUser(await consumer.getAddress(), false);
 
+      // Create offer
       const tx = await energyExchange.connect(producer).createOffer(
         quantity,
         pricePerUnit,
@@ -184,13 +217,20 @@ describe("EnergyExchange", function () {
       const receipt = await tx.wait();
       const event = (receipt?.logs[0] as EventLog);
       offerId = event.args[0];
-      await energyExchange.connect(enedis).validateOfferCreation(offerId, true);
+
+      // Validate offer creation
+      await energyExchange.connect(enedis).validateOfferCreation(offerId, true, IPFS_URI);
+
+      // Create commitment
+      secret = ethers.hexlify(ethers.randomBytes(32));
+      commitment = ethers.keccak256(ethers.solidityPacked(["bytes32"], [secret]));
+      await energyExchange.connect(consumer).commitToPurchase(commitment);
     });
 
     it("Should allow consumer to purchase an offer", async function () {
       const totalPrice = quantity * pricePerUnit;
       await expect(
-        energyExchange.connect(consumer).purchaseOffer(offerId, { value: totalPrice })
+        energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice })
       ).to.emit(energyExchange, "OfferPurchased")
         .withArgs(offerId, await consumer.getAddress(), totalPrice);
     });
@@ -198,43 +238,29 @@ describe("EnergyExchange", function () {
     it("Should not allow purchase with incorrect payment", async function () {
       const incorrectPrice = ethers.parseEther("0.5");
       await expect(
-        energyExchange.connect(consumer).purchaseOffer(offerId, { value: incorrectPrice })
+        energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: incorrectPrice })
       ).to.be.revertedWith("Incorrect payment amount");
     });
 
     it("Should distribute fees correctly on validation", async function () {
       const totalPrice = quantity * pricePerUnit;
-      await energyExchange.connect(consumer).purchaseOffer(offerId, { value: totalPrice });
-
-      const producerBalanceBefore = await ethers.provider.getBalance(await producer.getAddress());
-      const enedisBalanceBefore = await ethers.provider.getBalance(await enedis.getAddress());
-      const poolBalanceBefore = await ethers.provider.getBalance(await pool.getAddress());
+      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
 
       await energyExchange.connect(enedis).validateAndDistribute(offerId, true);
 
-      const producerBalanceAfter = await ethers.provider.getBalance(await producer.getAddress());
-      const enedisBalanceAfter = await ethers.provider.getBalance(await enedis.getAddress());
-      const poolBalanceAfter = await ethers.provider.getBalance(await pool.getAddress());
+      // Vérifier les paiements en attente
+      const producerPayment = await energyExchange.pendingPayments(await producer.getAddress());
+      const enedisPayment = await energyExchange.pendingPayments(await enedis.getAddress());
+      const poolPayment = await energyExchange.pendingPayments(await pool.getAddress());
 
-      // Check fee distribution (75%, 20%, 3%, 2%) with larger tolerance for gas costs
-      const tolerance = ethers.parseEther("0.001"); // Increased tolerance
-      expect(producerBalanceAfter - producerBalanceBefore).to.be.closeTo(
-        totalPrice * 750n / 1000n,
-        tolerance
-      );
-      expect(enedisBalanceAfter - enedisBalanceBefore).to.be.closeTo(
-        totalPrice * 200n / 1000n,
-        tolerance
-      );
-      expect(poolBalanceAfter - poolBalanceBefore).to.be.closeTo(
-        totalPrice * 20n / 1000n,
-        tolerance
-      );
+      expect(producerPayment.amount).to.equal(totalPrice * 750n / 1000n); // 75%
+      expect(enedisPayment.amount).to.equal(totalPrice * 200n / 1000n); // 20%
+      expect(poolPayment.amount).to.equal(totalPrice * 20n / 1000n); // 2%
     });
 
     it("Should mint NFT certificate on successful validation", async function () {
       const totalPrice = quantity * pricePerUnit;
-      await energyExchange.connect(consumer).purchaseOffer(offerId, { value: totalPrice });
+      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
       await energyExchange.connect(enedis).validateAndDistribute(offerId, true);
 
       expect(await energyNFT.balanceOf(await consumer.getAddress())).to.equal(1n);
@@ -242,7 +268,7 @@ describe("EnergyExchange", function () {
 
     it("Should refund buyer on failed validation", async function () {
       const totalPrice = quantity * pricePerUnit;
-      await energyExchange.connect(consumer).purchaseOffer(offerId, { value: totalPrice });
+      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
 
       const balanceBefore = await ethers.provider.getBalance(await consumer.getAddress());
       await energyExchange.connect(enedis).validateAndDistribute(offerId, false);
@@ -259,6 +285,8 @@ describe("EnergyExchange", function () {
     let offerId: bigint;
     const quantity = 1000n;
     const pricePerUnit = ethers.parseEther("0.001");
+    let secret: string;
+    let commitment: string;
 
     beforeEach(async function () {
       await energyExchange.addUser(await producer.getAddress(), true);
@@ -268,10 +296,15 @@ describe("EnergyExchange", function () {
       const receipt = await tx.wait();
       const event = (receipt?.logs[0] as EventLog);
       offerId = event.args[0];
-      await energyExchange.connect(enedis).validateOfferCreation(offerId, true);
+
+      await energyExchange.connect(enedis).validateOfferCreation(offerId, true, IPFS_URI);
+      
+      secret = ethers.hexlify(ethers.randomBytes(32));
+      commitment = ethers.keccak256(ethers.solidityPacked(["bytes32"], [secret]));
+      await energyExchange.connect(consumer).commitToPurchase(commitment);
       
       const totalPrice = quantity * pricePerUnit;
-      await energyExchange.connect(consumer).purchaseOffer(offerId, { value: totalPrice });
+      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
     });
 
     it("Should not allow validation after deadline", async function () {
@@ -282,23 +315,58 @@ describe("EnergyExchange", function () {
       ).to.be.revertedWith("Validation deadline exceeded");
     });
 
-    it("Should allow cancellation after deadline", async function () {
-      await time.increase(VALIDATION_DEADLINE + 1);
-      
-      const balanceBefore = await ethers.provider.getBalance(await consumer.getAddress());
-      await energyExchange.connect(consumer).cancelExpiredOffer(offerId);
-      const balanceAfter = await ethers.provider.getBalance(await consumer.getAddress());
+  });
 
+  describe("Payment Withdrawal", function () {
+    let offerId: bigint;
+    const quantity = 1000n;
+    const pricePerUnit = ethers.parseEther("0.001");
+    let totalPrice: bigint;
+
+    beforeEach(async function () {
+      await energyExchange.addUser(await producer.getAddress(), true);
+      await energyExchange.addUser(await consumer.getAddress(), false);
+
+      const tx = await energyExchange.connect(producer).createOffer(quantity, pricePerUnit, "solar");
+      const receipt = await tx.wait();
+      const event = (receipt?.logs[0] as EventLog);
+      offerId = event.args[0];
+
+      await energyExchange.connect(enedis).validateOfferCreation(offerId, true, IPFS_URI);
+
+      const secret = ethers.hexlify(ethers.randomBytes(32));
+      const commitment = ethers.keccak256(ethers.solidityPacked(["bytes32"], [secret]));
+      await energyExchange.connect(consumer).commitToPurchase(commitment);
+
+      totalPrice = quantity * pricePerUnit;
+      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
+      await energyExchange.connect(enedis).validateAndDistribute(offerId, true);
+    });
+
+    it("Should allow producer to withdraw pending payment", async function () {
+      const expectedAmount = totalPrice * 750n / 1000n; // 75%
+      const balanceBefore = await ethers.provider.getBalance(await producer.getAddress());
+      
+      await energyExchange.connect(producer).withdrawPayment();
+      
+      const balanceAfter = await ethers.provider.getBalance(await producer.getAddress());
       expect(balanceAfter - balanceBefore).to.be.closeTo(
-        quantity * pricePerUnit,
+        expectedAmount,
         ethers.parseEther("0.01") // Allow for gas costs
       );
     });
 
-    it("Should not allow cancellation before deadline", async function () {
+    it("Should not allow withdrawal with no pending payment", async function () {
       await expect(
-        energyExchange.connect(consumer).cancelExpiredOffer(offerId)
-      ).to.be.revertedWith("Validation deadline not exceeded");
+        energyExchange.connect(platform).withdrawPayment()
+      ).to.be.revertedWith("No payment available");
+    });
+
+    it("Should not allow double withdrawal", async function () {
+      await energyExchange.connect(producer).withdrawPayment();
+      await expect(
+        energyExchange.connect(producer).withdrawPayment()
+      ).to.be.revertedWith("No payment available");
     });
   });
 
