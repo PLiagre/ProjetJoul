@@ -33,8 +33,20 @@ interface VotingContextType {
 
 const VotingContext = createContext<VotingContextType | undefined>(undefined);
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 2000; // 2 seconds
+const MAX_RETRIES = 5;
+const BASE_DELAY = 2000; // 2 seconds base delay
+const MAX_DELAY = 30000; // 30 seconds maximum delay
+
+function getBackoffDelay(retryCount: number): number {
+  // Exponential backoff with max delay
+  const exponentialDelay = Math.min(
+    BASE_DELAY * Math.pow(2, retryCount),
+    MAX_DELAY
+  );
+  // Add random jitter (±20% of delay)
+  const jitter = exponentialDelay * 0.2 * (Math.random() - 0.5);
+  return exponentialDelay + jitter;
+}
 
 function parseContractError(error: any): string {
   if (error.cause?.data?.message) {
@@ -60,23 +72,42 @@ function parseContractError(error: any): string {
 
 async function withRetry<T>(
   operation: () => Promise<T>,
-  retries = MAX_RETRIES,
-  delay = RETRY_DELAY
+  retries = MAX_RETRIES
 ): Promise<T> {
-  try {
-    return await operation();
-  } catch (error: any) {
-    if (
-      retries > 0 &&
-      (error.message?.toLowerCase().includes('json-rpc') ||
+  let lastError: any;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if we should retry based on error type
+      const shouldRetry = 
+        error.message?.toLowerCase().includes('json-rpc') ||
         error.message?.toLowerCase().includes('network') ||
-        error.message?.toLowerCase().includes('timeout'))
-    ) {
+        error.message?.toLowerCase().includes('timeout') ||
+        error.message?.includes('429') ||
+        error.message?.includes('Too Many Requests');
+      
+      if (!shouldRetry || i === retries - 1) {
+        throw error;
+      }
+      
+      // Calculate delay based on retry count
+      const delay = getBackoffDelay(i);
+      
+      // Log retry attempt
+      console.log(`Retry attempt ${i + 1}/${retries}, waiting ${Math.round(delay/1000)}s...`);
+      if (error.message?.includes('429')) {
+        console.log('Rate limit hit, backing off...');
+      }
+      
       await new Promise(resolve => setTimeout(resolve, delay));
-      return withRetry(operation, retries - 1, delay);
     }
-    throw error;
   }
+  
+  throw lastError;
 }
 
 export function VotingProvider({ children }: { children: ReactNode }) {
@@ -99,11 +130,13 @@ export function VotingProvider({ children }: { children: ReactNode }) {
 
     const fetchWinningProposalId = async () => {
       try {
-        const result = await publicClient.readContract({
-          address: contractAddress,
-          abi,
-          functionName: 'winningProposalID',
-        });
+        const result = await withRetry(() => 
+          publicClient.readContract({
+            address: contractAddress,
+            abi,
+            functionName: 'winningProposalID',
+          })
+        );
         setWinningProposalId(result as bigint);
       } catch (error) {
         console.error('Error fetching winning proposal ID:', error);
@@ -119,12 +152,14 @@ export function VotingProvider({ children }: { children: ReactNode }) {
 
     const fetchVoterInfo = async () => {
       try {
-        const result = await publicClient.readContract({
-          address: contractAddress,
-          abi,
-          functionName: 'getVoter',
-          args: [address as Address],
-        });
+        const result = await withRetry(() =>
+          publicClient.readContract({
+            address: contractAddress,
+            abi,
+            functionName: 'getVoter',
+            args: [address as Address],
+          })
+        );
         setVoterInfo(result as VoterInfo);
       } catch (error) {
         console.error('Error fetching voter info:', error);
@@ -140,11 +175,13 @@ export function VotingProvider({ children }: { children: ReactNode }) {
 
     const fetchWorkflowStatus = async () => {
       try {
-        const result = await publicClient.readContract({
-          address: contractAddress,
-          abi,
-          functionName: 'workflowStatus',
-        });
+        const result = await withRetry(() =>
+          publicClient.readContract({
+            address: contractAddress,
+            abi,
+            functionName: 'workflowStatus',
+          })
+        );
         setWorkflowStatus(Number(result));
       } catch (error) {
         console.error('Error fetching workflow status:', error);
@@ -174,12 +211,14 @@ export function VotingProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const result = await publicClient.readContract({
-        address: contractAddress,
-        abi,
-        functionName: 'getProposalVoteCount',
-        args: [BigInt(proposalId)],
-      });
+      const result = await withRetry(() =>
+        publicClient.readContract({
+          address: contractAddress,
+          abi,
+          functionName: 'getProposalVoteCount',
+          args: [BigInt(proposalId)],
+        })
+      );
       return result as bigint;
     } catch (error) {
       console.error('Error getting proposal vote count:', error);
@@ -194,14 +233,17 @@ export function VotingProvider({ children }: { children: ReactNode }) {
 
     try {
       // Check JOUL token balance and approval
-      const joulTokenAddress = await publicClient.readContract({
-        address: contractAddress,
-        abi,
-        functionName: 'joulToken',
-      }) as Address;
+      const joulTokenAddress = await withRetry(() =>
+        publicClient.readContract({
+          address: contractAddress,
+          abi,
+          functionName: 'joulToken',
+        })
+      ) as Address;
 
       // Check balance
-      const balance = await publicClient.readContract({
+      const balance = await withRetry(async () => {
+        const result = await publicClient.readContract({
         address: joulTokenAddress,
         abi: [{
           name: 'balanceOf',
@@ -212,9 +254,11 @@ export function VotingProvider({ children }: { children: ReactNode }) {
         }],
         functionName: 'balanceOf',
         args: [address],
-      }) as bigint;
+      });
+        return result as bigint;
+      });
 
-      if (balance < VOTE_COST) {
+      if (typeof balance === 'bigint' && balance < VOTE_COST) {
         throw new Error('Insufficient JOUL tokens. You need 1 JOUL token to vote.');
       }
 
@@ -237,7 +281,7 @@ export function VotingProvider({ children }: { children: ReactNode }) {
       });
 
       const approveHash = await walletClient.writeContract(approveRequest);
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      await withRetry(() => publicClient.waitForTransactionReceipt({ hash: approveHash }));
 
       const { request } = await publicClient.simulateContract({
         address: contractAddress,
@@ -254,7 +298,7 @@ export function VotingProvider({ children }: { children: ReactNode }) {
         description: "Please wait while your vote is being submitted...",
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
+      await withRetry(() => publicClient.waitForTransactionReceipt({ hash }));
 
       toast({
         title: "Vote Submitted",
@@ -402,11 +446,13 @@ export function VotingProvider({ children }: { children: ReactNode }) {
       await refreshState();
 
       // Fetch winning distribution
-      const result = await publicClient.readContract({
-        address: contractAddress,
-        abi,
-        functionName: 'getWinningDistribution',
-      });
+      const result = await withRetry(() =>
+        publicClient.readContract({
+          address: contractAddress,
+          abi,
+          functionName: 'getWinningDistribution',
+        })
+      );
 
       const distribution = result as any;
       setWinningDistribution({

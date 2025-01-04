@@ -31,14 +31,24 @@ export function AdminDashboard() {
   const [hasEnedis, setHasEnedis] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     async function checkEnedisRole() {
       if (address) {
-        const hasEnedisAccess = await hasEnedisRole(address);
-        setHasEnedis(hasEnedisAccess);
+        try {
+          const hasEnedisAccess = await hasEnedisRole(address);
+          if (isMounted) {
+            setHasEnedis(hasEnedisAccess);
+          }
+        } catch (error) {
+          console.error("Error checking ENEDIS role:", error);
+        }
       }
     }
     checkEnedisRole();
-  }, [address, hasEnedisRole]);
+    return () => {
+      isMounted = false;
+    };
+  }, [address]); // Remove hasEnedisRole from dependencies to prevent excessive calls
 
   // Early return if not admin
   if (!currentUser?.isAdmin) {

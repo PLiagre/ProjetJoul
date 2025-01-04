@@ -40,13 +40,13 @@ const config: HardhatUserConfig = {
       chainId: 11155111,
     },
     polygon: {
-      url: "https://polygon-rpc.com",
+      url: "https://polygon-mainnet.infura.io/v3/a4eab9824c4f45e4b54c43987b900dee",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 137,
-      gas: 8000000,
-      gasMultiplier: 3,
+      gas: 12000000,
+      gasMultiplier: 5,
       blockGasLimit: 30000000,
-      timeout: 120000
+      timeout: 300000
     }
   },
   etherscan: {

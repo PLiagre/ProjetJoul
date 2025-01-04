@@ -21,14 +21,19 @@ export function VotingManagement() {
   const [isLoading, setIsLoading] = useState(false);
   const [voteCounts, setVoteCounts] = React.useState<bigint[]>([]);
 
-  // Récupération continue des décomptes de votes pendant et après le vote
+  // Récupération des décomptes de votes avec un intervalle plus long
   React.useEffect(() => {
+    let isMounted = true;
     const fetchVotes = async () => {
+      if (!isMounted) return;
+      
       try {
         const counts = await Promise.all(
           proposals.map((_, index) => getProposalVoteCount(index))
         );
-        setVoteCounts(counts);
+        if (isMounted) {
+          setVoteCounts(counts);
+        }
       } catch (error) {
         console.error('Erreur lors de la récupération des décomptes de votes:', error);
       }
@@ -36,13 +41,14 @@ export function VotingManagement() {
 
     fetchVotes();
 
-    // Mise à jour des votes toutes les 10 secondes pendant le vote actif
+    // Mise à jour des votes toutes les 30 secondes pendant le vote actif
     let interval: NodeJS.Timeout;
     if (workflowStatus === 0) { // Session de vote active
-      interval = setInterval(fetchVotes, 10000);
+      interval = setInterval(fetchVotes, 30000);
     }
 
     return () => {
+      isMounted = false;
       if (interval) clearInterval(interval);
     };
   }, [workflowStatus, getProposalVoteCount, proposals]);
