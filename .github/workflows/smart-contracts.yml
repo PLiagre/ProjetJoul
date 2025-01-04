@@ -35,7 +35,7 @@ jobs:
       run: npx hardhat compile
       
     - name: Run tests
-      run: npx hardhat test
+      run: npx hardhat test --network hardhat
       
     - name: Run solhint
       run: npx solhint 'contracts/**/*.sol'
