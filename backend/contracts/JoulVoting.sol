@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title JoulVoting Contract
- * @dev Implements a voting system for MATIC distribution proposals
+ * @dev Implements a voting system for Pol distribution proposals
  */
 contract JoulVoting is Ownable {
     using SafeERC20 for IERC20;
@@ -35,7 +35,6 @@ contract JoulVoting is Ownable {
     error AlreadyVoted();
     error InvalidProposalId();
     error InsufficientJoulTokens();
-    error InvalidWorkflowStatus();
     error VotingSessionNotEnded();
     error VotesNotTallied();
 
@@ -53,13 +52,30 @@ contract JoulVoting is Ownable {
     IERC20 public immutable joulToken;
     mapping(address => Voter) public voters;
 
-    event VoterRegistered(address voterAddress);
     event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus newStatus);
     event Voted(address voter, uint proposalId);
 
     constructor(address _joulToken) Ownable(msg.sender) {
         joulToken = IERC20(_joulToken);
         proposalVoteCounts = new uint[](3);
+        workflowStatus = WorkflowStatus.VotingSessionStarted;
+    }
+
+    /**
+     * @notice Starts a new voting session by resetting all votes and voter statuses
+     */
+    function startVotingSession() external onlyOwner {
+        // Reset all vote counts
+        for (uint i = 0; i < proposalVoteCounts.length; i++) {
+            proposalVoteCounts[i] = 0;
+        }
+        
+        // Reset winning proposal
+        winningProposalID = 0;
+        
+        // Set status to started
+        workflowStatus = WorkflowStatus.VotingSessionStarted;
+        emit WorkflowStatusChange(WorkflowStatus.VotesTallied, WorkflowStatus.VotingSessionStarted);
     }
 
     /**
@@ -85,7 +101,7 @@ contract JoulVoting is Ownable {
      */
     function setVote(uint _id) external {
         if (workflowStatus != WorkflowStatus.VotingSessionStarted) revert VotingSessionNotStarted();
-        if (voters[msg.sender].hasVoted) revert AlreadyVoted();
+        if (voters[msg.sender].hasVoted && voters[msg.sender].votedProposalId == _id) revert AlreadyVoted();
         if (_id >= 3) revert InvalidProposalId();
         if (joulToken.balanceOf(msg.sender) < 1 ether) revert InsufficientJoulTokens();
 
@@ -101,15 +117,6 @@ contract JoulVoting is Ownable {
         proposalVoteCounts[_id]++;
 
         emit Voted(msg.sender, _id);
-    }
-
-    /**
-     * @notice Starts the voting session
-     */
-    function startVotingSession() external onlyOwner {
-        if (workflowStatus != WorkflowStatus.VotesTallied) revert InvalidWorkflowStatus();
-        workflowStatus = WorkflowStatus.VotingSessionStarted;
-        emit WorkflowStatusChange(WorkflowStatus.VotesTallied, WorkflowStatus.VotingSessionStarted);
     }
 
     /**

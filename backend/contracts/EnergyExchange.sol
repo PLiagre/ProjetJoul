@@ -39,6 +39,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
     uint256 public constant MAX_QUANTITY = 1000000000; // 1 GWh
     uint256 public constant MAX_PRICE_PER_UNIT = 1000000000000000000; // 1 MATIC
     uint256 public constant MAX_ENERGY_TYPE_LENGTH = 32;
+    uint256 public constant VALIDATION_DEADLINE = 24 hours;
 
     struct EnergyOffer {
         address producer;
@@ -51,6 +52,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         bool isCompleted;
         bool isPendingCreation;
         string ipfsUri;       // URI IPFS pour les métadonnées du NFT
+        uint256 purchaseTimestamp; // Timestamp when the offer was purchased
     }
 
     mapping(uint256 => EnergyOffer) public offers;
@@ -182,7 +184,8 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             isValidated: false,
             isCompleted: false,
             isPendingCreation: true,
-            ipfsUri: ""
+            ipfsUri: "",
+            purchaseTimestamp: 0
         });
 
         emit OfferCreated(
@@ -210,7 +213,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         // Calculate reward amount before state changes
         uint256 rewardAmount = 0;
         if (isValid) {
-            rewardAmount = (offer.quantity * ONE_JOUL) / 1000000;
+            rewardAmount = (offer.quantity * ONE_JOUL) / 1000;
             require(rewardAmount > 0, "Production reward amount must be positive");
         }
 
@@ -251,6 +254,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
 
         offer.buyer = msg.sender;
         offer.isActive = false;
+        offer.purchaseTimestamp = block.timestamp;
 
         emit OfferPurchased(offerId, msg.sender, totalPrice);
     }
@@ -292,6 +296,7 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         require(!offer.isCompleted, "Offer already completed");
         require(offer.buyer != address(0), "Offer not purchased");
         require(!offer.isPendingCreation, "Offer creation not validated");
+        require(block.timestamp <= offer.purchaseTimestamp + VALIDATION_DEADLINE, "Validation deadline exceeded");
         console.log("\nOffer state validation passed");
 
         // Calculate refund amount before state changes
@@ -367,9 +372,9 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         joulToken.mintSaleReward(offer.producer, fixedReward);
         joulToken.mintPurchaseReward(offer.buyer, fixedReward);
         
-        // Mint du NFT en dernier car c'est une opération non critique
+        // Mint du NFT au buyer comme preuve d'achat
         energyNFT.mintCertificate(
-            offer.producer,
+            offer.buyer,
             offer.quantity,
             offer.energyType,
             offer.ipfsUri

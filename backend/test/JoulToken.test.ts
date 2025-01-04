@@ -17,9 +17,9 @@ describe("JoulToken", function () {
   let recipient: HardhatEthersSigner;
   let nonAuthorized: HardhatEthersSigner;
 
-  const PRODUCTION_REWARD_RATE = 10n; // 1%
-  const PURCHASE_REWARD_RATE = 5n;    // 0.5%
-  const SALE_REWARD_RATE = 5n;        // 0.5%
+  const PRODUCTION_REWARD_RATE = 1n; // 0.1%
+  const FIXED_REWARD = ethers.parseEther("0.5"); // 0.5 JOUL
+  const DAILY_MINT_LIMIT = ethers.parseEther("1000000"); // 1M JOUL
 
   beforeEach(async function () {
     [owner, minter, pauser, recipient, nonAuthorized] = await ethers.getSigners();
@@ -46,10 +46,9 @@ describe("JoulToken", function () {
       expect(await joulToken.hasRole(DEFAULT_ADMIN_ROLE, await owner.getAddress())).to.be.true;
     });
 
-    it("Should set the correct reward rates", async function () {
+    it("Should set the correct reward values", async function () {
       expect(await joulToken.PRODUCTION_REWARD_RATE()).to.equal(PRODUCTION_REWARD_RATE);
-      expect(await joulToken.PURCHASE_REWARD_RATE()).to.equal(PURCHASE_REWARD_RATE);
-      expect(await joulToken.SALE_REWARD_RATE()).to.equal(SALE_REWARD_RATE);
+      expect(await joulToken.FIXED_REWARD()).to.equal(FIXED_REWARD);
     });
   });
 
@@ -75,11 +74,11 @@ describe("JoulToken", function () {
   describe("Production Rewards", function () {
     it("Should mint correct amount for production rewards", async function () {
       const energyAmount = ethers.parseEther("1000"); // 1000 Wh
-      const expectedReward = (energyAmount * PRODUCTION_REWARD_RATE) / 1000n; // 1%
+      const expectedReward = (energyAmount * PRODUCTION_REWARD_RATE) / 1000n; // 0.1% reward rate
 
       await expect(joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), energyAmount))
         .to.emit(joulToken, "RewardMinted")
-        .withArgs(await recipient.getAddress(), expectedReward, "PRODUCTION");
+        .withArgs(await recipient.getAddress(), expectedReward, "PRODUCTION", energyAmount);
 
       expect(await joulToken.balanceOf(await recipient.getAddress())).to.equal(expectedReward);
     });
@@ -94,13 +93,26 @@ describe("JoulToken", function () {
   describe("Purchase Rewards", function () {
     it("Should mint correct amount for purchase rewards", async function () {
       const purchaseAmount = ethers.parseEther("100"); // 100 MATIC
-      const expectedReward = (purchaseAmount * PURCHASE_REWARD_RATE) / 1000n; // 0.5%
+      const expectedReward = FIXED_REWARD;
 
       await expect(joulToken.connect(minter).mintPurchaseReward(await recipient.getAddress(), purchaseAmount))
         .to.emit(joulToken, "RewardMinted")
-        .withArgs(await recipient.getAddress(), expectedReward, "PURCHASE");
+        .withArgs(await recipient.getAddress(), FIXED_REWARD, "PURCHASE", purchaseAmount);
 
       expect(await joulToken.balanceOf(await recipient.getAddress())).to.equal(expectedReward);
+    });
+
+    it("Should not allow minting to zero address", async function () {
+      const purchaseAmount = ethers.parseEther("100");
+      await expect(
+        joulToken.connect(minter).mintPurchaseReward(ethers.ZeroAddress, purchaseAmount)
+      ).to.be.revertedWith("Invalid recipient address");
+    });
+
+    it("Should not allow minting with zero amount", async function () {
+      await expect(
+        joulToken.connect(minter).mintPurchaseReward(await recipient.getAddress(), 0)
+      ).to.be.revertedWith("Amount must be positive");
     });
 
     it("Should not allow non-minter to mint purchase rewards", async function () {
@@ -113,13 +125,26 @@ describe("JoulToken", function () {
   describe("Sale Rewards", function () {
     it("Should mint correct amount for sale rewards", async function () {
       const saleAmount = ethers.parseEther("100"); // 100 MATIC
-      const expectedReward = (saleAmount * SALE_REWARD_RATE) / 1000n; // 0.5%
+      const expectedReward = FIXED_REWARD;
 
       await expect(joulToken.connect(minter).mintSaleReward(await recipient.getAddress(), saleAmount))
         .to.emit(joulToken, "RewardMinted")
-        .withArgs(await recipient.getAddress(), expectedReward, "SALE");
+        .withArgs(await recipient.getAddress(), FIXED_REWARD, "SALE", saleAmount);
 
       expect(await joulToken.balanceOf(await recipient.getAddress())).to.equal(expectedReward);
+    });
+
+    it("Should not allow minting to zero address", async function () {
+      const saleAmount = ethers.parseEther("100");
+      await expect(
+        joulToken.connect(minter).mintSaleReward(ethers.ZeroAddress, saleAmount)
+      ).to.be.revertedWith("Invalid recipient address");
+    });
+
+    it("Should not allow minting with zero amount", async function () {
+      await expect(
+        joulToken.connect(minter).mintSaleReward(await recipient.getAddress(), 0)
+      ).to.be.revertedWith("Amount must be positive");
     });
 
     it("Should not allow non-minter to mint sale rewards", async function () {
@@ -163,26 +188,72 @@ describe("JoulToken", function () {
 
       await expect(joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), energyAmount))
         .to.emit(joulToken, "RewardMinted")
-        .withArgs(await recipient.getAddress(), expectedReward, "PRODUCTION");
+        .withArgs(await recipient.getAddress(), expectedReward, "PRODUCTION", energyAmount);
+    });
+  });
+
+  describe("Daily Mint Limits", function () {
+    it("Should track daily minted amount", async function () {
+      const energyAmount = ethers.parseEther("1000");
+      const expectedReward = (energyAmount * PRODUCTION_REWARD_RATE) / 1000n;
+      
+      await joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), energyAmount);
+      
+      const block = await ethers.provider.getBlock("latest");
+      if (!block) throw new Error("Block not found");
+      const currentDay = Math.floor(block.timestamp / 86400);
+      expect(await joulToken.dailyMintedAmount(currentDay)).to.equal(expectedReward);
+    });
+
+    it("Should emit DailyMintLimitUpdated event", async function () {
+      const energyAmount = ethers.parseEther("1000");
+      const expectedReward = (energyAmount * PRODUCTION_REWARD_RATE) / 1000n;
+      
+      const block = await ethers.provider.getBlock("latest");
+      if (!block) throw new Error("Block not found");
+      const currentDay = Math.floor(block.timestamp / 86400);
+      await expect(joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), energyAmount))
+        .to.emit(joulToken, "DailyMintLimitUpdated")
+        .withArgs(currentDay, expectedReward);
+    });
+
+    it("Should not allow minting above daily limit", async function () {
+      // Need to mint more than 1M JOUL tokens
+      // With (amount * 10^18) / 1000 calculation, we need amount > 1000 * 1M
+      const largeAmount = ethers.parseEther("1000000001"); // Just over the limit
+      
+      await expect(
+        joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), largeAmount)
+      ).to.be.revertedWith("Daily mint limit exceeded");
+    });
+
+    it("Should reset daily limit after 24 hours", async function () {
+      const energyAmount = ethers.parseEther("1000");
+      await joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), energyAmount);
+      
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60]);
+      await ethers.provider.send("evm_mine", []);
+      
+      await expect(
+        joulToken.connect(minter).mintProductionReward(await recipient.getAddress(), energyAmount)
+      ).to.not.be.reverted;
     });
   });
 
   describe("ERC20 Functionality", function () {
     beforeEach(async function () {
-      // Mint some tokens for testing
-      await joulToken.connect(minter).mintProductionReward(await owner.getAddress(), ethers.parseEther("1000"));
+      // Mint some tokens for testing - 10000 Wh at 0.1% rate gives us 10 JOUL tokens
+      await joulToken.connect(minter).mintProductionReward(await owner.getAddress(), ethers.parseEther("10000"));
     });
 
     it("Should allow token transfers", async function () {
-      // We minted from 1000 Wh at 1% rate, so we have 10 JOUL tokens
-      const amount = ethers.parseEther("5"); // Transfer half of our tokens
+      const amount = ethers.parseEther("1"); // Transfer 1 JOUL token
       await joulToken.connect(owner).transfer(await recipient.getAddress(), amount);
       expect(await joulToken.balanceOf(await recipient.getAddress())).to.equal(amount);
     });
 
     it("Should allow token approvals and transferFrom", async function () {
-      // We minted from 1000 Wh at 1% rate, so we have 10 JOUL tokens
-      const amount = ethers.parseEther("5"); // Transfer half of our tokens
+      const amount = ethers.parseEther("1"); // Transfer 1 JOUL token
       await joulToken.connect(owner).approve(await recipient.getAddress(), amount);
       await joulToken.connect(recipient).transferFrom(
         await owner.getAddress(),

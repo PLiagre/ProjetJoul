@@ -321,17 +321,32 @@ export function AdminDashboard() {
                 />
               </div>
 
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="isProducer"
-                  checked={isProducer}
-                  onChange={(e) => setIsProducer(e.target.checked)}
-                  className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
-                />
-                <label htmlFor="isProducer" className="text-sm font-medium text-white">
-                  Enregistrer comme Producteur (décoché = Consommateur)
-                </label>
+              <div className="flex items-center">
+                <span className="text-sm font-medium text-white w-24 text-right mr-4">
+                  Consommateur
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isProducer}
+                  onClick={() => setIsProducer(!isProducer)}
+                  className={`
+                    relative inline-flex h-6 w-11 items-center rounded-full
+                    ${isProducer ? 'bg-[#18ad65]' : 'bg-gray-700'}
+                    transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                  `}
+                >
+                  <span className="sr-only">Choisir le type d'utilisateur</span>
+                  <span
+                    className={`
+                      inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                      ${isProducer ? 'translate-x-6' : 'translate-x-1'}
+                    `}
+                  />
+                </button>
+                <span className="text-sm font-medium text-white w-24 ml-2">
+                  Producteur
+                </span>
               </div>
 
               <button
