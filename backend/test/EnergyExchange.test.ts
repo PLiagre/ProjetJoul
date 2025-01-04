@@ -258,12 +258,16 @@ describe("EnergyExchange", function () {
       expect(poolPayment.amount).to.equal(totalPrice * 20n / 1000n); // 2%
     });
 
-    it("Should mint NFT certificate on successful validation", async function () {
+    it("Should mint NFT certificate to producer on successful validation", async function () {
       const totalPrice = quantity * pricePerUnit;
       await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
       await energyExchange.connect(enedis).validateAndDistribute(offerId, true);
 
-      expect(await energyNFT.balanceOf(await consumer.getAddress())).to.equal(1n);
+      // Vérifier que le NFT est minté au producteur
+      expect(await energyNFT.balanceOf(await producer.getAddress())).to.equal(1n);
+      
+      // Vérifier que l'acheteur n'a pas reçu de NFT
+      expect(await energyNFT.balanceOf(await consumer.getAddress())).to.equal(0n);
     });
 
     it("Should refund buyer on failed validation", async function () {

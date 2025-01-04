@@ -1,5 +1,5 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
-import { sepolia, hardhat } from 'wagmi/chains'
+import { sepolia, hardhat, polygon } from 'wagmi/chains'
 import { http } from 'wagmi'
 import contractAddresses from './contract-addresses.json'
 import contractAddressesAmoy from './contract-addresses-amoy.json'
@@ -39,7 +39,7 @@ export const polygonAmoy = {
 export const wagmiConfig = getDefaultConfig({
   appName: 'JOUL Energy Exchange',
   projectId: 'c6c9e3de6f50a53b26b9b9c4859d6025', // WalletConnect Project ID
-  chains: [polygonAmoy, hardhat, sepolia],
+  chains: [polygon, polygonAmoy, hardhat, sepolia],
   ssr: true, // Enable server-side rendering support
   transports: {
     [polygonAmoy.id]: http(polygonAmoy.rpcUrls.default.http[0], {
@@ -49,7 +49,13 @@ export const wagmiConfig = getDefaultConfig({
       timeout: 20000
     }),
     [hardhat.id]: http('http://127.0.0.1:8545'),
-    [sepolia.id]: http('https://rpc.sepolia.org')
+    [sepolia.id]: http('https://rpc.sepolia.org'),
+    [polygon.id]: http('https://polygon-rpc.com', {
+      batch: false,
+      retryCount: 3,
+      retryDelay: 3000, // 3 seconds between retries
+      timeout: 20000    // 20 second timeout
+    })
   }
 })
 
@@ -60,9 +66,14 @@ export function getContractAddresses(chainId: number) {
     return contractAddressesAmoy;
   }
   
+  // Si on est sur Polygon Mainnet (chainId: 137)
+  if (chainId === polygon.id) {
+    return contractAddresses;
+  }
+  
   // Par défaut, utiliser les adresses locales
   return contractAddresses;
 }
 
 // Contract addresses from our latest deployment
-export const CONTRACT_ADDRESSES = getContractAddresses(polygonAmoy.id)
+export const CONTRACT_ADDRESSES = getContractAddresses(polygon.id)

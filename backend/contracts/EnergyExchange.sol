@@ -341,9 +341,9 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         joulToken.mintSaleReward(offer.producer, fixedReward);
         joulToken.mintPurchaseReward(offer.buyer, fixedReward);
         
-        // Mint du NFT au buyer comme preuve d'achat
+        // Mint du NFT au producteur comme preuve de production
         energyNFT.mintCertificate(
-            offer.buyer,
+            offer.producer,
             offer.quantity,
             offer.energyType,
             offer.ipfsUri
