@@ -21,6 +21,12 @@ async function main() {
     console.log("Network: Polygon Mainnet");
     console.log("Explorer: https://www.polygonscan.com/");
 
+    // Définition des adresses admin
+    const mainDeployer = "0x5276736a83fb2Fb0601D01738cC81A612A3D9BCA";
+    const secondAdmin = "0x8606684bD504EFBcb23B55C2729d77D328Fb62ad";
+    const thirdAdmin = "0x4d6371994557c161B3133BE641C4Fa013169522d";
+    const fourthAdmin = "0x8FC529c92f56E6787EF6110cDd7FBC1D7Cf6dCFa";
+
     // 1. Déploiement du JoulToken
     console.log("\nDeploying JoulToken...");
     // @ts-ignore
@@ -92,6 +98,30 @@ async function main() {
       console.log("JoulVoting deployed to:", joulVotingAddress);
       console.log(`View on Polyscan: https://polygonscan.com/address/${joulVotingAddress}`);
 
+      // Donner le rôle ADMIN_ROLE aux administrateurs pour JoulVoting
+      console.log("\nSetting up JoulVoting admin roles...");
+      const VOTING_ADMIN_ROLE = await joulVoting.ADMIN_ROLE();
+      
+      // Main deployer
+      const mainDeployerVotingTx = await joulVoting.grantRole(VOTING_ADMIN_ROLE, mainDeployer);
+      await mainDeployerVotingTx.wait();
+      console.log(`Granted ADMIN_ROLE to main deployer on JoulVoting: ${mainDeployer}`);
+      
+      // Second admin
+      const secondAdminVotingTx = await joulVoting.grantRole(VOTING_ADMIN_ROLE, secondAdmin);
+      await secondAdminVotingTx.wait();
+      console.log(`Granted ADMIN_ROLE to second admin on JoulVoting: ${secondAdmin}`);
+      
+      // Third admin
+      const thirdAdminVotingTx = await joulVoting.grantRole(VOTING_ADMIN_ROLE, thirdAdmin);
+      await thirdAdminVotingTx.wait();
+      console.log(`Granted ADMIN_ROLE to third admin on JoulVoting: ${thirdAdmin}`);
+      
+      // Fourth admin
+      const fourthAdminVotingTx = await joulVoting.grantRole(VOTING_ADMIN_ROLE, fourthAdmin);
+      await fourthAdminVotingTx.wait();
+      console.log(`Granted ADMIN_ROLE to fourth admin on JoulVoting: ${fourthAdmin}`);
+
       // Configuration des rôles
       console.log("\nSetting up roles...");
 
@@ -119,7 +149,6 @@ async function main() {
       console.log("Granted ADMIN_ROLE to deployer for UserManagement");
 
       // Ajouter l'adresse du déployeur principal en tant qu'admin
-      const mainDeployer = "0x5276736a83fb2Fb0601D01738cC81A612A3D9BCA";
       const mainDeployerTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, mainDeployer);
       await mainDeployerTx.wait();
       console.log(`Granted ADMIN_ROLE to main deployer: ${mainDeployer}`);
@@ -143,7 +172,6 @@ async function main() {
       console.log(`Granted DEFAULT_ADMIN_ROLE to main deployer on EnergyExchange: ${mainDeployer}`);
 
       // Deuxième admin
-      const secondAdmin = "0x8606684bD504EFBcb23B55C2729d77D328Fb62ad";
       const secondAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, secondAdmin);
       await secondAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to second admin: ${secondAdmin}`);
@@ -163,7 +191,6 @@ async function main() {
       console.log(`Granted DEFAULT_ADMIN_ROLE to second admin on EnergyExchange: ${secondAdmin}`);
 
       // Troisième admin
-      const thirdAdmin = "0x4d6371994557c161B3133BE641C4Fa013169522d";
       const thirdAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, thirdAdmin);
       await thirdAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to third admin: ${thirdAdmin}`);
@@ -183,7 +210,6 @@ async function main() {
       console.log(`Granted DEFAULT_ADMIN_ROLE to third admin on EnergyExchange: ${thirdAdmin}`);
 
       // Quatrième admin
-      const fourthAdmin = "0x8FC529c92f56E6787EF6110cDd7FBC1D7Cf6dCFa";
       const fourthAdminTx = await userManagement.grantRole(USER_MANAGEMENT_ADMIN_ROLE, fourthAdmin);
       await fourthAdminTx.wait();
       console.log(`Granted ADMIN_ROLE to fourth admin: ${fourthAdmin}`);
