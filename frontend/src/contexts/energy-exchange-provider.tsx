@@ -171,92 +171,84 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       console.log('Starting fetchOffers...');
       const fetchedOffers: EnergyOffer[] = [];
       const maxRetries = 5;
-      const baseDelay = 2000; // 2 seconds base delay
+      const baseDelay = 2000; // 2 second base delay to avoid rate limiting
       let consecutiveErrors = 0;
       let index = 0;
+      let lastValidIndex = -1;
+      const batchSize = 10; // Larger batch size to reduce number of requests
       
       const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
       
       const getBackoffDelay = (retry: number) => {
         const backoff = Math.min(baseDelay * Math.pow(2, retry), 30000); // Max 30 seconds
-        const jitter = Math.random() * 1000; // Add random jitter
-        return backoff + jitter;
+        return backoff + Math.random() * 1000; // Add jitter
       };
 
-      const handleRateLimit = async (retryCount: number) => {
-        const backoffDelay = getBackoffDelay(retryCount);
-        console.log(`Rate limit hit, backing off for ${backoffDelay}ms`);
-        await delay(backoffDelay);
+      const handleRateLimit = async () => {
+        console.log('Rate limit hit, backing off for 5 seconds');
+        await delay(5000); // Fixed 5 second delay on rate limit
+      };
+
+      // Function to fetch a batch of offers
+      const fetchBatch = async (startIndex: number, size: number) => {
+        const batch = [];
+        for (let i = 0; i < size; i++) {
+          const currentIndex = startIndex + i;
+          try {
+            const response = await publicClient.readContract({
+              address: contractAddress,
+              abi,
+              functionName: 'offers',
+              args: [BigInt(currentIndex)],
+            });
+            
+            const offer = convertToOffer(response as OfferResponse, BigInt(currentIndex));
+            if (offer.producer !== '0x0000000000000000000000000000000000000000') {
+              batch.push(offer);
+              lastValidIndex = currentIndex;
+            }
+          } catch (error: any) {
+            if (error.message?.includes('429')) {
+              await handleRateLimit();
+              i--; // Retry this index
+              continue;
+            }
+            console.error(`Error fetching offer at index ${currentIndex}:`, error);
+          }
+        }
+        return batch;
       };
       
-      while (consecutiveErrors < 3 && index < 100) {
-        let retryCount = 0;
+      // Fetch offers in batches
+      while (consecutiveErrors < 3 && index < 50) { // Reduced max range to 50
         try {
-          let result: { success: boolean; data: OfferResponse | null; index: number } | undefined;
-
-          while (retryCount < maxRetries) {
-            try {
-              const response = await publicClient.readContract({
-                address: contractAddress,
-                abi,
-                functionName: 'offers',
-                args: [BigInt(index)],
-              });
-
-              result = {
-                success: true,
-                data: response as OfferResponse,
-                index
-              };
-              break;
-            } catch (error: any) {
-              retryCount++;
-              
-              // Check specifically for rate limit error
-              if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
-                await handleRateLimit(retryCount);
-                continue;
-              }
-
-              // For other errors, use shorter delay
-              await delay(getBackoffDelay(retryCount - 1));
-              
-              if (retryCount === maxRetries) {
-                result = {
-                  success: false,
-                  data: null,
-                  index
-                };
-                break;
-              }
-            }
-          }
-
-          if (result?.success && result.data) {
-            const offer = convertToOffer(result.data, BigInt(result.index));
-            if (offer.producer !== '0x0000000000000000000000000000000000000000') {
-              fetchedOffers.push(offer);
-              consecutiveErrors = 0;
-              retryCount = 0; // Reset retry count on success
-            } else {
-              consecutiveErrors++;
-            }
+          const batchOffers = await fetchBatch(index, batchSize);
+          if (batchOffers.length > 0) {
+            fetchedOffers.push(...batchOffers);
+            consecutiveErrors = 0;
           } else {
             consecutiveErrors++;
           }
-
-          index++;
-          // Base delay between successful requests
+          
+          // Move to next batch
+          index += batchSize;
+          
+          // If we haven't found any valid offers in the last 2 batches, stop
+          if (index > lastValidIndex + (batchSize * 2)) {
+            break;
+          }
+          
+          // Add delay between batches to avoid rate limiting
           await delay(baseDelay);
         } catch (error) {
-          console.error('Error fetching offer:', error);
-          await delay(getBackoffDelay(retryCount));
+          console.error('Error fetching batch:', error);
+          await delay(baseDelay * 2); // Simple backoff for batch errors
           continue;
         }
       }
 
       fetchedOffers.sort((a, b) => Number(b.id - a.id));
-      setOffers(fetchedOffers.sort((a, b) => Number(b.id - a.id)));
+      setOffers(fetchedOffers);
     } catch (error) {
       console.error('Error in fetchOffers:', error);
     }
@@ -265,35 +257,40 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const debouncedFetchOffers = useCallback(
     debounce(() => {
       fetchOffers();
-    }, 300),
-    [fetchOffers]
+    }, 1000), // 1 second debounce for all users
+    [fetchOffers, currentUserState?.isAdmin]
   );
 
+  // Initial load effect
   useEffect(() => {
-    let isMounted = true;
     if (isConnected && publicClient) {
-      fetchOffers().then(() => {
-        if (isMounted) {
-          // Set up periodic refresh every 15 seconds
-          const interval = setInterval(fetchOffers, 15000);
-          return () => {
-            clearInterval(interval);
-            isMounted = false;
-          };
-        }
-      });
+      fetchOffers();
+      setIsInitialLoad(false);
     }
   }, [isConnected, publicClient, fetchOffers]);
+
+  // Separate effect for periodic refresh
+  useEffect(() => {
+    if (!isConnected || !publicClient || isInitialLoad) return;
+
+    // Longer refresh intervals to reduce RPC calls
+    const refreshInterval = currentUserState?.isAdmin ? 30000 : 60000; // 30 seconds for admin, 1 minute for others
+    const interval = setInterval(fetchOffers, refreshInterval);
+    
+    return () => clearInterval(interval);
+  }, [isConnected, publicClient, fetchOffers, currentUserState?.isAdmin, isInitialLoad]);
 
   useEffect(() => {
     if (!publicClient) return;
   
-    const handleOfferPurchased = async (log: any) => {
+    const handleOfferPurchased = debounce(async (log: any) => {
       console.log('OfferPurchased event received:', log);
-      await fetchOffers();
-    };
+      if (!isInitialLoad) {
+        await fetchOffers();
+      }
+    }, 1000);
 
-    const handleOfferCreated = async (log: any) => {
+    const handleOfferCreated = debounce(async (log: any) => {
       console.log('OfferCreated event received:', log);
       try {
         const decodedLog = decodeEventLog({
@@ -305,13 +302,17 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('Error decoding OfferCreated event:', error);
       }
-      await fetchOffers();
-    };
+      if (!isInitialLoad) {
+        await fetchOffers();
+      }
+    }, 1000);
   
     const handleOtherEvents = debounce(() => {
       console.log('Other event received, fetching offers...');
-      fetchOffers();
-    }, 500);
+      if (!isInitialLoad) {
+        fetchOffers();
+      }
+    }, 1000); // 1 second debounce for all event-triggered refreshes
   
     const unwatchEvents = [
       publicClient.watchContractEvent({
@@ -349,7 +350,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     return () => {
       unwatchEvents.forEach(unwatch => unwatch());
     };
-  }, [publicClient, contractAddress, fetchOffers]);
+  }, [publicClient, contractAddress, fetchOffers, currentUserState?.isAdmin]);
 
   useEffect(() => {
     async function updateUserStatus() {
@@ -378,23 +379,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
 
     updateUserStatus();
   }, [address, isConnected, isAdmin, isProducer]);
-
-  useEffect(() => {
-    if (offers.length > 0) {
-      const offersWithBuyers = offers.filter(
-        offer => offer.buyer !== '0x0000000000000000000000000000000000000000'
-      );
-      
-      console.log('Current offers with buyers:', offersWithBuyers.map(offer => ({
-        id: offer.id.toString(),
-        buyer: offer.buyer?.toLowerCase(),
-        isPendingCreation: offer.isPendingCreation,
-        isActive: offer.isActive,
-        isCompleted: offer.isCompleted,
-        isValidated: offer.isValidated
-      })));
-    }
-  }, [offers]);
 
   const { writeContractAsync } = useWriteContract();
 
@@ -532,11 +516,9 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         throw new Error('Public client not initialized');
       }
 
-      // Get current gas price and add 20% buffer
       const gasPrice = await publicClient.getGasPrice();
       const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
 
-      // Estimate gas with a 50% buffer
       const gasEstimate = await publicClient.estimateContractGas({
         address: contractAddress,
         abi,
@@ -574,7 +556,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
       const receipt = await publicClient?.waitForTransactionReceipt({ hash });
       console.log('Transaction receipt:', receipt);
 
-      // Check for OfferCreated event
       if (receipt) {
         const offerCreatedEvents = receipt.logs
           .map(log => {
@@ -628,13 +609,10 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         connectedAddress: address
       });
 
-      // Get current gas price and add 20% buffer
       const gasPrice = await publicClient.getGasPrice();
       const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
 
-      // Estimate gas and add 50% buffer
-      // Use a fixed gas limit for commitToPurchase
-      const fixedGasLimit = BigInt(100000); // Fixed gas limit that should be sufficient
+      const fixedGasLimit = BigInt(100000);
 
       console.log('Transaction parameters:', {
         gasPrice: bufferedGasPrice.toString(),
@@ -728,13 +706,11 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         connectedAddress: address
       });
 
-      // Récupérer les données de l'offre
       const offer = offers.find(o => o.id === offerId);
       if (!offer) {
         throw new Error('Offer not found');
       }
 
-      // Si l'offre est valide, générer et uploader les métadonnées IPFS
       let ipfsUri = '';
       if (isValid) {
         try {
@@ -758,7 +734,6 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Mettre à jour l'URI dans le contrat EnergyExchange
       const gasPrice = await publicClient.getGasPrice();
       const bufferedGasPrice = gasPrice * BigInt(12) / BigInt(10);
 
