@@ -74,8 +74,8 @@ export function useEnergyNFT() {
 
   // Fonction pour obtenir l'URL OpenSea d'un NFT
   const getOpenSeaURL = (tokenId: string | number) => {
-    // URL de base pour OpenSea testnet (Polygon Amoy)
-    const baseURL = "https://testnets.opensea.io/assets/amoy";
+    // URL de base pour OpenSea mainnet (Polygon)
+    const baseURL = "https://opensea.io/assets/matic";
     return `${baseURL}/${contractAddress}/${tokenId}`;
   };
 
