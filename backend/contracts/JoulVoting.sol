@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @title JoulVoting Contract
  * @dev Implements a voting system for Pol distribution proposals
  */
-contract JoulVoting is Ownable {
+contract JoulVoting is AccessControl {
     using SafeERC20 for IERC20;
 
     struct Distribution {
@@ -55,7 +55,11 @@ contract JoulVoting is Ownable {
     event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus newStatus);
     event Voted(address voter, uint proposalId);
 
-    constructor(address _joulToken) Ownable(msg.sender) {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+    constructor(address _joulToken) {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
         joulToken = IERC20(_joulToken);
         proposalVoteCounts = new uint[](3);
         workflowStatus = WorkflowStatus.VotingSessionStarted;
@@ -64,7 +68,7 @@ contract JoulVoting is Ownable {
     /**
      * @notice Starts a new voting session by resetting all votes and voter statuses
      */
-    function startVotingSession() external onlyOwner {
+    function startVotingSession() external onlyRole(ADMIN_ROLE) {
         // Reset all vote counts
         for (uint i = 0; i < proposalVoteCounts.length; i++) {
             proposalVoteCounts[i] = 0;
@@ -122,7 +126,7 @@ contract JoulVoting is Ownable {
     /**
      * @notice Ends the voting session
      */
-    function endVotingSession() external onlyOwner {
+    function endVotingSession() external onlyRole(ADMIN_ROLE) {
         if (workflowStatus != WorkflowStatus.VotingSessionStarted) revert VotingSessionNotStarted();
         workflowStatus = WorkflowStatus.VotingSessionEnded;
         emit WorkflowStatusChange(WorkflowStatus.VotingSessionStarted, WorkflowStatus.VotingSessionEnded);
@@ -131,7 +135,7 @@ contract JoulVoting is Ownable {
     /**
      * @notice Tallies the votes and determines the winning proposal
      */
-    function tallyVotes() external onlyOwner {
+    function tallyVotes() external onlyRole(ADMIN_ROLE) {
         if (workflowStatus != WorkflowStatus.VotingSessionEnded) revert VotingSessionNotEnded();
         
         uint winningVoteCount = 0;
