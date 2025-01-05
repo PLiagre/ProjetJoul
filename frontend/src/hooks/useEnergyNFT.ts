@@ -20,6 +20,12 @@ export function useEnergyNFT() {
     args: address && isConnected ? [address] : undefined,
   });
 
+  // Create an array of indices based on the balance
+  const indices = balance ? Array.from({ length: Number(balance) }, (_, i) => i) : [];
+  
+  // Use Array.from to create an array of sequential numbers for the NFTs
+  const ownedTokens = indices;
+
   const { writeContractAsync } = useWriteContract();
 
   const approve = async (operator: `0x${string}`, approved: boolean) => {
@@ -93,6 +99,7 @@ export function useEnergyNFT() {
 
   return {
     balance,
+    ownedTokens,
     approve,
     transferFrom,
     mintCertificate,

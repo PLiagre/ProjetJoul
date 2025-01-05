@@ -27,11 +27,16 @@ function NFTDisplay({ tokenId, getOpenSeaURL, getEnergyTypeImage, contractAddres
     args: [BigInt(tokenId)],
   }) as { data: EnergyData | undefined };
 
-  if (!certificateData) return null;
+  if (!certificateData) {
+    return (
+      <div className="bg-gray-600 rounded-lg p-2 flex flex-col items-center justify-center hover:bg-gray-500 transition-colors">
+        <div className="relative w-16 h-16 mb-1 animate-pulse bg-gray-700 rounded-lg"></div>
+      </div>
+    );
+  }
 
   return (
     <a 
-      key={tokenId} 
       href={getOpenSeaURL(tokenId)}
       target="_blank"
       rel="noopener noreferrer"
@@ -62,7 +67,7 @@ export function ProducerDashboard() {
 
   const { balance: joulBalance } = useJoulToken();
   const { toast } = useToast();
-  const { balance: nftBalance, getOpenSeaURL, getEnergyTypeImage, contractAddress, abi } = useEnergyNFT();
+  const { balance: nftBalance, ownedTokens, getOpenSeaURL, getEnergyTypeImage, contractAddress, abi } = useEnergyNFT();
 
   // JOUL balance is already formatted by the hook
   const formattedJoulBalance = joulBalance ? Number(joulBalance).toFixed(2) : "0";
@@ -156,10 +161,10 @@ export function ProducerDashboard() {
               <div className="bg-[#225577] rounded-lg p-4">
                 <p className="text-gray-300 mb-2">Certificats d'Énergie</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {Array.from({ length: Number(nftBalance || 0) }, (_, i) => (
+                  {(ownedTokens || []).map((index: number) => (
                     <NFTDisplay
-                      key={i}
-                      tokenId={i}
+                      key={`nft-${index}-${contractAddress}-${Date.now()}-${Math.random()}`}
+                      tokenId={index}
                       getOpenSeaURL={getOpenSeaURL}
                       getEnergyTypeImage={getEnergyTypeImage}
                       contractAddress={contractAddress}

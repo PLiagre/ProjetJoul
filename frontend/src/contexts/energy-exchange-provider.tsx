@@ -265,7 +265,7 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
   const debouncedFetchOffers = useCallback(
     debounce(() => {
       fetchOffers();
-    }, 500),
+    }, 300),
     [fetchOffers]
   );
 
@@ -274,8 +274,8 @@ export function EnergyExchangeProvider({ children }: { children: ReactNode }) {
     if (isConnected && publicClient) {
       fetchOffers().then(() => {
         if (isMounted) {
-          // Set up periodic refresh every 60 seconds
-          const interval = setInterval(fetchOffers, 60000);
+          // Set up periodic refresh every 15 seconds
+          const interval = setInterval(fetchOffers, 15000);
           return () => {
             clearInterval(interval);
             isMounted = false;
