@@ -42,7 +42,8 @@ export function ConsumerDashboard() {
 
   // Format quantity from Wh to kWh for display
   const formatQuantity = (whQuantity: bigint) => {
-    return (Number(whQuantity) / 1000).toFixed(0);
+    const kwhValue = Number(whQuantity) / 1000;
+    return kwhValue < 1 ? kwhValue.toFixed(3) : kwhValue.toFixed(1);
   };
 
   // Convertit le prix de wei/Wh en POL/kWh

@@ -36,7 +36,7 @@ export function VotingComponent() {
 
   return (
     <div className="bg-gray-800 rounded-lg p-3">
-      <h2 className="text-xl font-bold mb-1.5 text-white">Vote pour la Distribution de MATIC</h2>
+      <h2 className="text-xl font-bold mb-1.5 text-white">Vote pour la Distribution de POL</h2>
       <div className="bg-gray-700 rounded-lg p-2 mb-3">
         <p className="text-white text-xs">Jetons JOUL requis pour voter : {formatEther(VOTE_COST)} JOUL</p>
         <p className="text-gray-400 text-xs">Note : Les jetons JOUL utilisés pour voter seront brûlés</p>
