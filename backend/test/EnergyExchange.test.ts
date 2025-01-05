@@ -244,18 +244,39 @@ describe("EnergyExchange", function () {
 
     it("Should distribute fees correctly on validation", async function () {
       const totalPrice = quantity * pricePerUnit;
-      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
+      
+      // Get initial balances
+      const producerBalanceBefore = await ethers.provider.getBalance(producer.address);
+      const enedisBalanceBefore = await ethers.provider.getBalance(enedis.address);
+      const poolBalanceBefore = await ethers.provider.getBalance(pool.address);
 
+      // Purchase and validate offer
+      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
       await energyExchange.connect(enedis).validateAndDistribute(offerId, true);
 
-      // Vérifier les paiements en attente
-      const producerPayment = await energyExchange.pendingPayments(await producer.getAddress());
-      const enedisPayment = await energyExchange.pendingPayments(await enedis.getAddress());
-      const poolPayment = await energyExchange.pendingPayments(await pool.getAddress());
+      // Get final balances
+      const producerBalanceAfter = await ethers.provider.getBalance(producer.address);
+      const enedisBalanceAfter = await ethers.provider.getBalance(enedis.address);
+      const poolBalanceAfter = await ethers.provider.getBalance(pool.address);
 
-      expect(producerPayment.amount).to.equal(totalPrice * 750n / 1000n); // 75%
-      expect(enedisPayment.amount).to.equal(totalPrice * 200n / 1000n); // 20%
-      expect(poolPayment.amount).to.equal(totalPrice * 20n / 1000n); // 2%
+      // Calculate expected amounts
+      const expectedProducerAmount = totalPrice * 750n / 1000n; // 75%
+      const expectedEnedisAmount = totalPrice * 200n / 1000n; // 20%
+      const expectedPoolAmount = totalPrice * 20n / 1000n; // 2%
+
+      // Verify balance changes with tolerance for gas costs
+      expect(producerBalanceAfter - producerBalanceBefore).to.be.closeTo(
+        expectedProducerAmount,
+        ethers.parseEther("0.01") // Allow for gas costs
+      );
+      expect(enedisBalanceAfter - enedisBalanceBefore).to.be.closeTo(
+        expectedEnedisAmount,
+        ethers.parseEther("0.01") // Allow for gas costs
+      );
+      expect(poolBalanceAfter - poolBalanceBefore).to.be.closeTo(
+        expectedPoolAmount,
+        ethers.parseEther("0.01") // Allow for gas costs
+      );
     });
 
     it("Should mint NFT certificate to producer on successful validation", async function () {
@@ -319,59 +340,6 @@ describe("EnergyExchange", function () {
       ).to.be.revertedWith("Validation deadline exceeded");
     });
 
-  });
-
-  describe("Payment Withdrawal", function () {
-    let offerId: bigint;
-    const quantity = 1000n;
-    const pricePerUnit = ethers.parseEther("0.001");
-    let totalPrice: bigint;
-
-    beforeEach(async function () {
-      await energyExchange.addUser(await producer.getAddress(), true);
-      await energyExchange.addUser(await consumer.getAddress(), false);
-
-      const tx = await energyExchange.connect(producer).createOffer(quantity, pricePerUnit, "solar");
-      const receipt = await tx.wait();
-      const event = (receipt?.logs[0] as EventLog);
-      offerId = event.args[0];
-
-      await energyExchange.connect(enedis).validateOfferCreation(offerId, true, IPFS_URI);
-
-      const secret = ethers.hexlify(ethers.randomBytes(32));
-      const commitment = ethers.keccak256(ethers.solidityPacked(["bytes32"], [secret]));
-      await energyExchange.connect(consumer).commitToPurchase(commitment);
-
-      totalPrice = quantity * pricePerUnit;
-      await energyExchange.connect(consumer).purchaseOffer(offerId, secret, { value: totalPrice });
-      await energyExchange.connect(enedis).validateAndDistribute(offerId, true);
-    });
-
-    it("Should allow producer to withdraw pending payment", async function () {
-      const expectedAmount = totalPrice * 750n / 1000n; // 75%
-      const balanceBefore = await ethers.provider.getBalance(await producer.getAddress());
-      
-      await energyExchange.connect(producer).withdrawPayment();
-      
-      const balanceAfter = await ethers.provider.getBalance(await producer.getAddress());
-      expect(balanceAfter - balanceBefore).to.be.closeTo(
-        expectedAmount,
-        ethers.parseEther("0.01") // Allow for gas costs
-      );
-    });
-
-    it("Should not allow withdrawal with no pending payment", async function () {
-      await expect(
-        energyExchange.connect(platform).withdrawPayment()
-      ).to.be.revertedWith("No payment available");
-    });
-
-    it("Should not allow double withdrawal", async function () {
-      await energyExchange.connect(producer).withdrawPayment();
-      await expect(
-        energyExchange.connect(producer).withdrawPayment()
-      ).to.be.revertedWith("No payment available");
-    });
   });
 
   describe("Pause Functionality", function () {

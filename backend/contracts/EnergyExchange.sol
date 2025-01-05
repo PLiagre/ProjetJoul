@@ -294,15 +294,6 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
         return true;
     }
 
-    // Structure pour stocker les paiements en attente
-    struct PendingPayment {
-        uint256 amount;
-        bool isPaid;
-    }
-
-    // Mapping pour stocker les paiements en attente
-    mapping(address => PendingPayment) public pendingPayments;
-
     function _distributeFeesAndRewards(uint256 offerId) private {
         EnergyOffer storage offer = offers[offerId];
         
@@ -323,11 +314,6 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             "Distribution amount mismatch"
         );
 
-        // Enregistrer les paiements en attente
-        pendingPayments[offer.producer].amount += producerAmount;
-        pendingPayments[enedisAddress].amount += enedisAmount;
-        pendingPayments[poolAddress].amount += poolAmount;
-
         // Émettre l'événement avant les interactions externes
         emit FeesDistributed(
             offerId,
@@ -336,6 +322,16 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             platformAmount,
             poolAmount
         );
+
+        // Transfert direct des MATIC
+        (bool producerSuccess, ) = payable(offer.producer).call{value: producerAmount}("");
+        require(producerSuccess, "Producer transfer failed");
+
+        (bool enedisSuccess, ) = payable(enedisAddress).call{value: enedisAmount}("");
+        require(enedisSuccess, "Enedis transfer failed");
+
+        (bool poolSuccess, ) = payable(poolAddress).call{value: poolAmount}("");
+        require(poolSuccess, "Pool transfer failed");
 
         // Minting des récompenses
         joulToken.mintSaleReward(offer.producer, fixedReward);
@@ -348,15 +344,6 @@ contract EnergyExchange is AccessControl, Pausable, ReentrancyGuard {
             offer.energyType,
             offer.ipfsUri
         );
-    }
-
-    // Nouvelle fonction pour retirer les paiements en attente
-    function withdrawPayment() external nonReentrant {
-        uint256 amount = pendingPayments[msg.sender].amount;
-        require(amount > 0, "No payment available");
-        
-        pendingPayments[msg.sender].amount = 0;
-        payable(msg.sender).sendValue(amount);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {
