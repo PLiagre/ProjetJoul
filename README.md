@@ -1,6 +1,6 @@
 # ProjetJoul - Plateforme d'Échange d'Énergie
 
-ProjetJoul est une plateforme décentralisée d'échange d'énergie utilisant la technologie blockchain. La plateforme permet aux producteurs et consommateurs d'énergie d'échanger de l'énergie via des NFTs et inclut un système de gouvernance par le biais de mécanismes de vote.
+ProjetJoul est une plateforme décentralisée d'échange d'énergie utilisant la technologie blockchain. La plateforme permet aux producteurs et consommateurs d'énergie d'échanger de l'énergie en payant via la blockchain Polygon et inclut un système de gouvernance par le biais de mécanismes de vote.
 
 ## Structure du Projet
 
