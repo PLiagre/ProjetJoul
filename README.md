@@ -26,7 +26,7 @@ Le projet est organisé en deux composants principaux :
 
 ## Fonctionnalités Principales
 
-- Échange d'énergie via NFTs
+- Échange d'énergie avec paiement via la blockchain Polygon 
 - Contrôle d'accès basé sur les rôles (Admin, Producteur, Consommateur)
 - Gouvernance par système de vote
 - Support multi-réseaux (Polygon, Amoy)
